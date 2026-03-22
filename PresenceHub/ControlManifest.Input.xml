@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<manifest>
+  <control namespace="MauLabs" constructor="PresenceHub" version="1.0.0" display-name-key="Presence Hub" description-key="Merged Presence Timer and Queue Hub — two-tab productivity pane control for Dynamics 365 Customer Service" control-type="standard" >
+    <external-service-usage enabled="false">
+    </external-service-usage>
+    <property name="dummyProp" display-name-key="Dummy" description-key="Unused property required by PCF" of-type="SingleLine.Text" usage="input" required="false" />
+    <resources>
+      <code path="index.ts" order="1"/>
+      <css path="css/PresenceHub.css" order="1" />
+    </resources>
+    <feature-usage>
+      <uses-feature name="Utility" required="true" />
+      <uses-feature name="WebAPI" required="true" />
+    </feature-usage>
+  </control>
+</manifest>

@@ -1,0 +1,659 @@
+/* ═══════════════════════════════════════════════════════════════
+   Presence Hub — Tab Shell
+   ═══════════════════════════════════════════════════════════════ */
+
+.presence-hub {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  overflow: hidden;
+}
+
+.ph-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #e0e0e0;
+  background: #fafafa;
+  flex-shrink: 0;
+}
+
+.ph-tab {
+  flex: 1;
+  padding: 10px 4px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: #666;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  outline: none;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.ph-tab:hover {
+  color: #333;
+  background: #f0f0f0;
+}
+
+.ph-tab-active {
+  color: #0078d4;
+  border-bottom-color: #0078d4;
+}
+
+.ph-tab-active:hover {
+  color: #0078d4;
+  background: none;
+}
+
+.ph-panel {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Presence Timer Panel
+   ═══════════════════════════════════════════════════════════════ */
+
+.presence-timer {
+  padding: 10px 14px 20px;
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #333;
+  --radius: 12px;
+}
+
+/* ── Card ── */
+.presence-timer .card {
+  background: linear-gradient(135deg, #f7f9fc 0%, #eef2fa 100%);
+  border-radius: var(--radius);
+  padding: 16px 14px 12px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  margin-bottom: 12px;
+}
+
+.presence-timer .pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border-radius: 999px;
+  padding: 4px 14px 4px 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 10px;
+}
+
+.presence-timer .dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  animation: pt-pulse 2s ease-in-out infinite;
+}
+@keyframes pt-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.8; }
+}
+
+.presence-timer .name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.presence-timer .time {
+  font-size: 28px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 1px;
+  margin: 2px 0 0;
+}
+
+.presence-timer .lbl {
+  font-size: 11px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+.presence-timer .err {
+  color: #c4314b;
+  font-size: 12px;
+  margin-top: 8px;
+  display: none;
+}
+
+/* ── Date-Picker ── */
+.presence-timer .dp-section {
+  margin-bottom: 10px;
+  position: relative;
+}
+.presence-timer .dp-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: center;
+}
+
+.presence-timer .dp-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 28px;
+  text-align: center;
+  color: #555;
+  padding: 0;
+}
+.presence-timer .dp-btn:hover {
+  background: #f0f0f0;
+}
+
+.presence-timer .dp-label {
+  font-weight: 600;
+  font-size: 13px;
+  min-width: 110px;
+  text-align: center;
+}
+
+.presence-timer .dp-today {
+  font-size: 11px;
+  border: 1px solid #0078d4;
+  color: #0078d4;
+  border-radius: 6px;
+  background: #fff;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-weight: 600;
+  margin-left: 4px;
+}
+.presence-timer .dp-today:hover {
+  background: #e5f1fb;
+}
+
+.presence-timer .dp-cal-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #555;
+  padding: 0;
+}
+.presence-timer .dp-cal-btn:hover {
+  background: #f0f0f0;
+}
+
+/* ── Calendar Overlay ── */
+.presence-timer .cal-overlay {
+  position: absolute;
+  top: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 240px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  padding: 10px;
+  z-index: 10;
+}
+
+.presence-timer .cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.presence-timer .cal-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.presence-timer .cal-nav {
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: none;
+  font-size: 18px;
+  cursor: pointer;
+  border-radius: 4px;
+  color: #333;
+  padding: 0;
+  line-height: 26px;
+  text-align: center;
+}
+.presence-timer .cal-nav:hover {
+  background: #f0f0f0;
+}
+.presence-timer .cal-nav-dis {
+  color: #ccc;
+  pointer-events: none;
+}
+
+.presence-timer .cal-dow-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  text-align: center;
+  font-size: 10px;
+  color: #888;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.presence-timer .cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  text-align: center;
+}
+
+.presence-timer .cal-cell {
+  width: 30px;
+  height: 30px;
+}
+
+.presence-timer .cal-day {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: none;
+  border-radius: 50%;
+  font-size: 12px;
+  cursor: pointer;
+  color: #333;
+  padding: 0;
+  line-height: 30px;
+}
+.presence-timer .cal-day:hover {
+  background: #e5f1fb;
+}
+
+.presence-timer .cal-today {
+  font-weight: 700;
+  border: 2px solid #0078d4;
+}
+
+.presence-timer .cal-sel {
+  background: #0078d4 !important;
+  color: #fff !important;
+}
+
+.presence-timer .cal-dis {
+  color: #ccc;
+  cursor: default;
+}
+.presence-timer .cal-dis:hover {
+  background: none;
+}
+
+/* ── Summary chips ── */
+.presence-timer .summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.presence-timer .sum-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #f5f5f5;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11.5px;
+  color: #555;
+}
+.presence-timer .sum-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.presence-timer .sum-val {
+  font-weight: 600;
+  color: #333;
+}
+
+/* ── Timeline ── */
+.presence-timer .hist {
+  margin-top: 4px;
+}
+.presence-timer .hist-title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: #333;
+}
+.presence-timer .hist-loading {
+  font-size: 12px;
+  color: #888;
+  padding: 8px 0;
+}
+
+.presence-timer .tl {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+}
+.presence-timer .tl::before {
+  content: "";
+  position: absolute;
+  left: 5.5px;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: #e0e0e0;
+}
+
+.presence-timer .tl-item {
+  display: flex;
+  gap: 10px;
+  padding: 6px 0;
+  position: relative;
+}
+.presence-timer .tl-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 2px;
+  z-index: 1;
+}
+.presence-timer .tl-body {
+  flex: 1;
+  min-width: 0;
+}
+.presence-timer .tl-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.presence-timer .tl-name {
+  font-weight: 600;
+  font-size: 12.5px;
+}
+.presence-timer .tl-dur {
+  font-size: 11.5px;
+  color: #666;
+  font-weight: 600;
+}
+.presence-timer .tl-time {
+  font-size: 11px;
+  color: #888;
+  margin-top: 1px;
+}
+.presence-timer .tl-bar {
+  height: 3px;
+  border-radius: 2px;
+  margin-top: 4px;
+  opacity: 0.5;
+}
+.presence-timer .tl-empty {
+  font-size: 12px;
+  color: #999;
+  padding: 12px 0;
+  text-align: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Queue Hub Panel
+   ═══════════════════════════════════════════════════════════════ */
+
+.queue-hub {
+  padding: 10px 14px 20px;
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #333;
+}
+
+/* ── Search ── */
+.queue-hub .qh-search-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fff;
+  padding-bottom: 6px;
+}
+.queue-hub .qh-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.queue-hub .qh-search:focus {
+  border-color: #0078d4;
+}
+
+/* ── Subtitle ── */
+.queue-hub .qh-subtitle {
+  text-align: center;
+  font-size: 11.5px;
+  color: #888;
+  margin: 2px 0 10px;
+  line-height: 1.45;
+}
+
+/* ── Back button ── */
+.queue-hub .qh-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: none;
+  color: #0078d4;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-bottom: 4px;
+  font-family: inherit;
+}
+.queue-hub .qh-back:hover {
+  text-decoration: underline;
+}
+
+/* ── Header (agent detail) ── */
+.queue-hub .qh-header {
+  margin-bottom: 8px;
+}
+.queue-hub .qh-header-text {
+  font-weight: 700;
+  font-size: 15px;
+}
+.queue-hub .qh-header-count {
+  font-size: 12px;
+  color: #888;
+  margin-top: 2px;
+}
+
+/* ── Summary chips ── */
+.queue-hub .qh-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.queue-hub .qh-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #f5f5f5;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11.5px;
+  color: #555;
+}
+.queue-hub .qh-chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.queue-hub .qh-chip-count {
+  font-weight: 600;
+  color: #333;
+}
+
+/* ── Queue list items ── */
+.queue-hub .qh-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.queue-hub .qh-item:hover {
+  background: #f5f5f5;
+}
+.queue-hub .qh-item-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #e0ecff;
+  color: #0078d4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.queue-hub .qh-item-body {
+  flex: 1;
+  min-width: 0;
+}
+.queue-hub .qh-item-name {
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.queue-hub .qh-item-arrow {
+  flex-shrink: 0;
+  color: #bbb;
+}
+
+/* ── Agent items ── */
+.queue-hub .qh-agent {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 10px;
+  transition: background 0.12s;
+}
+.queue-hub .qh-agent:hover {
+  background: #f9f9f9;
+}
+
+.queue-hub .qh-agent-avatar {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.queue-hub .qh-agent-photo {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.queue-hub .qh-agent-initials {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.queue-hub .qh-agent-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+}
+
+.queue-hub .qh-agent-body {
+  flex: 1;
+  min-width: 0;
+}
+.queue-hub .qh-agent-name {
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.queue-hub .qh-agent-status {
+  font-size: 11.5px;
+  color: #888;
+  margin-top: 1px;
+}
+.queue-hub .qh-agent-you {
+  font-size: 11px;
+  font-weight: 600;
+  color: #0078d4;
+  background: #e0ecff;
+  border-radius: 999px;
+  padding: 2px 8px;
+  flex-shrink: 0;
+}
+
+/* ── Empty & loading ── */
+.queue-hub .qh-empty {
+  text-align: center;
+  color: #999;
+  font-size: 12.5px;
+  padding: 24px 0;
+}
+.queue-hub .qh-loading {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  padding: 24px 0;
+}
+.queue-hub .qh-loading-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #0078d4;
+  animation: qh-bounce 1s ease-in-out infinite;
+}
+@keyframes qh-bounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-8px); }
+}
