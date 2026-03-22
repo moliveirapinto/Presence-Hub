@@ -305,6 +305,8 @@
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 10px;
+  justify-content: center !important;
+  text-align: center;
 }
 .presence-timer .sum-chip {
   display: inline-flex;
@@ -332,9 +334,12 @@
 }
 .presence-timer .hist-title {
   font-weight: 600;
-  font-size: 13px;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  text-align: center;
   margin-bottom: 8px;
-  color: #333;
+  color: #bbb;
 }
 .presence-timer .hist-loading {
   font-size: 12px;

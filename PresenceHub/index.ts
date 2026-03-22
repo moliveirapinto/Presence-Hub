@@ -275,22 +275,45 @@ class PresenceTimerPanel {
   private async _getPresence(): Promise<{ id: string; name: string; since: string | null }> {
     const resp = await this._s.api.retrieveMultipleRecords(
       "msdyn_agentstatus",
-      `?$filter=_msdyn_agentid_value eq ${this._s.userId}&$select=_msdyn_currentpresenceid_value,msdyn_presencemodifiedon&$top=1`
+      `?$filter=_msdyn_agentid_value eq ${this._s.userId}&$select=_msdyn_currentpresenceid_value&$top=1`
     );
     if (!resp.entities || !resp.entities.length) throw new Error("No agent status record found");
     const rec = resp.entities[0];
     const pid = rec["_msdyn_currentpresenceid_value"] as string;
     if (!pid) throw new Error("No current presence assigned");
-    return { id: pid, name: pName(pid, this._s.pmap), since: (rec["msdyn_presencemodifiedon"] as string) || null };
+
+    // Get the real start time from the latest history record (immune to page-refresh resets)
+    let since: string | null = null;
+    try {
+      const hResp = await this._s.api.retrieveMultipleRecords(
+        "msdyn_agentstatushistory",
+        `?$filter=_msdyn_agentid_value eq ${this._s.userId} and _msdyn_presenceid_value eq ${pid}` +
+        `&$select=msdyn_starttime,msdyn_endtime&$orderby=msdyn_starttime desc&$top=1`
+      );
+      if (hResp.entities && hResp.entities.length) {
+        since = (hResp.entities[0]["msdyn_starttime"] as string) || null;
+      }
+    } catch { /* fall through */ }
+
+    return { id: pid, name: pName(pid, this._s.pmap), since };
   }
 
   private async _fetchHistory(date: Date): Promise<ComponentFramework.WebApi.Entity[]> {
-    const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const dayEnd = new Date(dayStart.getTime() + 86400000);
+    // Build local-day boundaries as plain ISO strings (no Z suffix)
+    // so Dataverse compares in the user's configured timezone
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    const dayStartStr = `${y}-${m}-${d}T00:00:00`;
+    const next = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
+    const ny = next.getFullYear();
+    const nm = String(next.getMonth() + 1).padStart(2, "0");
+    const nd = String(next.getDate()).padStart(2, "0");
+    const dayEndStr = `${ny}-${nm}-${nd}T00:00:00`;
     const filter =
       `_msdyn_agentid_value eq ${this._s.userId}` +
-      ` and msdyn_starttime ge ${dayStart.toISOString()}` +
-      ` and msdyn_starttime lt ${dayEnd.toISOString()}`;
+      ` and msdyn_starttime ge ${dayStartStr}` +
+      ` and msdyn_starttime lt ${dayEndStr}`;
     const q =
       `?$filter=${filter}` +
       `&$select=msdyn_starttime,msdyn_endtime,_msdyn_presenceid_value` +
