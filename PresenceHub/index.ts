@@ -302,17 +302,17 @@ class PresenceTimerPanel {
   }
 
   private async _fetchHistory(date: Date): Promise<ComponentFramework.WebApi.Entity[]> {
-    // Build local-day boundaries as plain ISO strings (no Z suffix)
-    // so Dataverse compares in the user's configured timezone
+    // Build local-day boundaries as UTC ISO strings with Z suffix
+    // Dataverse requires DateTimeOffset format with timezone specifier
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, "0");
     const d = String(date.getDate()).padStart(2, "0");
-    const dayStartStr = `${y}-${m}-${d}T00:00:00`;
+    const dayStartStr = `${y}-${m}-${d}T00:00:00Z`;
     const next = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
     const ny = next.getFullYear();
     const nm = String(next.getMonth() + 1).padStart(2, "0");
     const nd = String(next.getDate()).padStart(2, "0");
-    const dayEndStr = `${ny}-${nm}-${nd}T00:00:00`;
+    const dayEndStr = `${ny}-${nm}-${nd}T00:00:00Z`;
     const filter =
       `_msdyn_agentid_value eq ${this._s.userId}` +
       ` and msdyn_starttime ge ${dayStartStr}` +
