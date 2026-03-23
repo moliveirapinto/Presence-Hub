@@ -332,6 +332,30 @@
 .presence-timer .hist {
   margin-top: 4px;
 }
+.presence-timer .hist-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.presence-timer .hist-header .hist-title {
+  margin-bottom: 0;
+}
+.presence-timer .hist-refresh {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #ccc;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+.presence-timer .hist-refresh:hover {
+  color: #888;
+}
 .presence-timer .hist-title {
   font-weight: 600;
   font-size: 11px;

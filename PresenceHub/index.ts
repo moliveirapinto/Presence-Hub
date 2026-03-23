@@ -175,6 +175,7 @@ class PresenceTimerPanel {
   private _elToday!: HTMLButtonElement;
   private _elCalBtn!: HTMLButtonElement;
   private _elCalOverlay!: HTMLDivElement;
+  private _elRefresh!: HTMLButtonElement;
 
   constructor(container: HTMLDivElement, services: SharedServices) {
     this._c = container;
@@ -216,7 +217,7 @@ class PresenceTimerPanel {
       </div>
       <div class="summary" data-ref="summary"></div>
       <div class="hist">
-        <div class="hist-title">Timeline</div>
+        <div class="hist-header"><span class="hist-title">Timeline</span><button class="hist-refresh" data-ref="refreshBtn" title="Refresh timeline"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 1 1 .908-.418A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg></button></div>
         <div data-ref="timeline"></div>
       </div>`;
 
@@ -232,6 +233,7 @@ class PresenceTimerPanel {
     this._elToday = this._ref("todayBtn") as HTMLButtonElement;
     this._elCalBtn = this._ref("calBtn") as HTMLButtonElement;
     this._elCalOverlay = this._ref("calOverlay") as HTMLDivElement;
+    this._elRefresh = this._ref("refreshBtn") as HTMLButtonElement;
 
     this._elPrev.addEventListener("click", () => this._shiftDay(-1));
     this._elNext.addEventListener("click", () => this._shiftDay(1));
@@ -243,6 +245,7 @@ class PresenceTimerPanel {
     });
     this._elCalBtn.addEventListener("click", () => this._toggleCalendar());
     this._elCalOverlay.addEventListener("click", (e) => e.stopPropagation());
+    this._elRefresh.addEventListener("click", () => this._loadDay());
     this._onDocClick = (e: MouseEvent) => {
       if (this._calOpen && !this._elCalBtn.contains(e.target as Node)) {
         this._calOpen = false;
