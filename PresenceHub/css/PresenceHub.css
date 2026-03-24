@@ -94,6 +94,36 @@
   height: 12px;
   border-radius: 50%;
   animation: pt-pulse 2s ease-in-out infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.presence-timer .dot-minus {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 6px;
+  height: 1.5px;
+  background: #fff;
+  border-radius: 1px;
+}
+.dot-minus-sm {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 5px;
+  height: 1.5px;
+  background: #fff;
+  border-radius: 1px;
+}
+.presence-timer .dot-icon {
+  width: 10px;
+  height: 10px;
+  display: block;
+  overflow: visible;
 }
 @keyframes pt-pulse {
   0%, 100% { transform: scale(1); opacity: 1; }
@@ -319,10 +349,23 @@
   color: #555;
 }
 .presence-timer .sum-dot {
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  position: relative;
+}
+.presence-timer .sum-dot .dot-icon-sm {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  display: block;
+  overflow: visible;
 }
+
 .presence-timer .sum-val {
   font-weight: 600;
   color: #333;
@@ -332,14 +375,32 @@
 .presence-timer .hist {
   margin-top: 4px;
 }
+.presence-timer .hist-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
 .presence-timer .hist-title {
   font-weight: 600;
   font-size: 11px;
   letter-spacing: 1.5px;
   text-transform: uppercase;
-  text-align: center;
-  margin-bottom: 8px;
   color: #bbb;
+}
+.presence-timer .hist-refresh {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  color: #999;
+  padding: 0 2px;
+  line-height: 1;
+  transition: color .15s;
+}
+.presence-timer .hist-refresh:hover {
+  color: #0078d4;
 }
 .presence-timer .hist-loading {
   font-size: 12px;
@@ -376,6 +437,27 @@
   flex-shrink: 0;
   margin-top: 2px;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  position: relative;
+}
+.presence-timer .tl-dot .dot-minus {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 6px;
+  height: 1.5px;
+  background: #fff;
+  border-radius: 1px;
+}
+.presence-timer .tl-dot .dot-icon {
+  width: 10px;
+  height: 10px;
+  display: block;
+  overflow: visible;
 }
 .presence-timer .tl-body {
   flex: 1;
@@ -425,25 +507,23 @@
 
 /* ── Search ── */
 .queue-hub .qh-search-wrap {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: #fff;
-  padding-bottom: 6px;
+  padding: 6px 12px 4px;
 }
 .queue-hub .qh-search {
   width: 100%;
   box-sizing: border-box;
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  padding: 7px 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
   font-size: 13px;
   font-family: inherit;
   outline: none;
   transition: border-color 0.15s;
+  background: #fafafa;
 }
 .queue-hub .qh-search:focus {
   border-color: #0078d4;
+  background: #fff;
 }
 
 /* ── Subtitle ── */
@@ -506,9 +586,21 @@
   color: #555;
 }
 .queue-hub .qh-chip-dot {
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  position: relative;
+}
+.queue-hub .qh-chip-dot .dot-icon-sm {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  display: block;
+  overflow: visible;
 }
 .queue-hub .qh-chip-count {
   font-weight: 600;
@@ -581,15 +673,14 @@
   font-weight: 700;
   font-size: 14px;
   flex-shrink: 0;
-  overflow: hidden;
 }
 
 .queue-hub .qh-agent-photo {
   position: absolute;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
+  width: 36px;
+  height: 36px;
   object-fit: cover;
   border-radius: 50%;
 }
@@ -604,12 +695,33 @@
 
 .queue-hub .qh-agent-dot {
   position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 10px;
-  height: 10px;
+  bottom: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  border: 2px solid #fff;
+  border: 1.5px solid #fff;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+.queue-hub .qh-dot-minus {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 4px;
+  height: 1px;
+  background: #fff;
+  border-radius: 1px;
+}
+.queue-hub .qh-agent-dot .dot-icon-sm {
+  width: 7px;
+  height: 7px;
+  display: block;
+  overflow: visible;
 }
 
 .queue-hub .qh-agent-body {
@@ -661,4 +773,233 @@
 @keyframes qh-bounce {
   0%, 60%, 100% { transform: translateY(0); }
   30% { transform: translateY(-8px); }
+}
+
+/* ── Subtabs (Queues / Agents) ── */
+.queue-hub .qh-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 12px 8px;
+  border-bottom: 1px solid #e8e8e8;
+  margin: 0 8px;
+}
+.queue-hub .qh-tab {
+  flex: 1;
+  text-align: center;
+  border: none;
+  background: none;
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #666;
+  cursor: pointer;
+  font-family: inherit;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  margin-bottom: -1px;
+}
+.queue-hub .qh-tab:hover {
+  color: #333;
+}
+.queue-hub .qh-tab--active {
+  color: #0078d4;
+  border-bottom-color: #0078d4;
+}
+
+/* ── Collapsible queue list header ── */
+.queue-hub .qh-collapse-hdr {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: 8px;
+  user-select: none;
+  color: #555;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 0.12s;
+}
+.queue-hub .qh-collapse-hdr:hover {
+  background: #f0f0f0;
+}
+.queue-hub .qh-collapse-arrow {
+  transition: transform 0.2s;
+  transform: rotate(-90deg);
+  flex-shrink: 0;
+}
+.queue-hub .qh-collapse-arrow--open {
+  transform: rotate(0deg);
+}
+.queue-hub .qh-collapse-label {
+  white-space: nowrap;
+}
+
+/* ── Checkbox (multi-select queues) ── */
+.queue-hub .qh-item--selectable {
+  cursor: pointer;
+}
+.queue-hub .qh-item--selected {
+  background: #e8f0fe;
+}
+.queue-hub .qh-item--selected:hover {
+  background: #dce8fc;
+}
+.queue-hub .qh-item--selected .qh-item-icon {
+  background: #0078d4;
+  color: #fff;
+}
+.queue-hub .qh-checkbox-wrap {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  position: relative;
+}
+.queue-hub .qh-checkbox {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.queue-hub .qh-checkbox-custom {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #c0c0c0;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  background: #fff;
+}
+.queue-hub .qh-checkbox:checked + .qh-checkbox-custom {
+  background: #0078d4;
+  border-color: #0078d4;
+}
+.queue-hub .qh-checkbox:checked + .qh-checkbox-custom::after {
+  content: '';
+  display: block;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  margin-top: -1px;
+}
+
+/* ── Results divider ── */
+.queue-hub .qh-results-divider {
+  display: flex;
+  align-items: center;
+  padding: 12px 12px 8px;
+  gap: 8px;
+}
+.queue-hub .qh-results-divider::before,
+.queue-hub .qh-results-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e0e0e0;
+}
+.queue-hub .qh-results-divider span {
+  font-size: 11px;
+  font-weight: 600;
+  color: #888;
+  white-space: nowrap;
+}
+.queue-hub .qh-results-count {
+  font-size: 11px;
+  color: #888;
+  padding: 2px 12px 6px;
+}
+.queue-hub .qh-selected-queues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 4px 12px 8px;
+}
+.queue-hub .qh-sel-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #555;
+  background: #f0f4fa;
+  border: 1px solid #dce3ed;
+  border-radius: 12px;
+  padding: 2px 6px 2px 10px;
+  line-height: 1.4;
+}
+.queue-hub .qh-sel-tag-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  font-size: 12px;
+  line-height: 1;
+  color: #888;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.queue-hub .qh-sel-tag-x:hover {
+  background: #dce3ed;
+  color: #333;
+}
+
+/* ── Clickable agent row ── */
+.queue-hub .qh-agent--clickable {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.queue-hub .qh-agent--clickable:hover {
+  background: #f5f5f5;
+}
+
+/* ── Expandable agent (Agents tab) ── */
+.queue-hub .qh-agent-expandable {
+  border-radius: 10px;
+  margin-bottom: 2px;
+  overflow: hidden;
+}
+.queue-hub .qh-agent-expandable--open {
+  background: #fafafa;
+}
+.queue-hub .qh-expand-arrow {
+  color: #aaa;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+  margin-left: 4px;
+}
+.queue-hub .qh-expand-arrow--open {
+  transform: rotate(180deg);
+}
+.queue-hub .qh-agent-queues {
+  padding: 0 12px 8px 54px;
+}
+.queue-hub .qh-agent-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #555;
+  border-radius: 6px;
+}
+.queue-hub .qh-agent-queue-item:hover {
+  background: #eee;
+}
+.queue-hub .qh-agent-queue-count {
+  font-size: 10px;
+  color: #888;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.queue-hub .qh-item-icon--sm {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 11px;
 }

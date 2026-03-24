@@ -31,6 +31,31 @@ function color(name: string): string {
   return "#8c8c8c";
 }
 
+/** Return inner-HTML icon for a presence status — matches D365 system icons. */
+function statusIcon(name: string, sz: "lg" | "sm" = "lg"): string {
+  const l = (name || "").toLowerCase();
+  // DND / Do Not Disturb → white minus bar
+  if (l.indexOf("do not disturb") > -1 || l.indexOf("dnd") > -1)
+    return sz === "lg" ? '<span class="dot-minus"></span>' : '<span class="dot-minus-sm"></span>';
+  // Available → white checkmark
+  if (l.indexOf("available") > -1)
+    return sz === "lg"
+      ? '<svg class="dot-icon" viewBox="0 0 12 12"><polyline points="2.5,6.5 5,9 9.5,3.5" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+      : '<svg class="dot-icon-sm" viewBox="0 0 12 12"><polyline points="3,6.5 5,8.5 9,3.5" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  // Away / Appear Away → white clock
+  if (l.indexOf("away") > -1)
+    return sz === "lg"
+      ? '<svg class="dot-icon" viewBox="0 0 12 12"><circle cx="6" cy="6" r="3.5" fill="none" stroke="#fff" stroke-width="1.3"/><line x1="6" y1="4" x2="6" y2="6" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/><line x1="6" y1="6" x2="7.8" y2="6" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/></svg>'
+      : '<svg class="dot-icon-sm" viewBox="0 0 12 12"><circle cx="6" cy="6" r="3.2" fill="none" stroke="#fff" stroke-width="1.8"/><line x1="6" y1="4.2" x2="6" y2="6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><line x1="6" y1="6" x2="7.6" y2="6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  // Offline / Inactive → diagonal slash (the dot itself is the circle)
+  if (l.indexOf("offline") > -1 || l.indexOf("inactive") > -1)
+    return sz === "lg"
+      ? '<svg class="dot-icon" viewBox="0 0 12 12"><line x1="3" y1="9" x2="9" y2="3" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>'
+      : '<svg class="dot-icon-sm" viewBox="0 0 12 12"><line x1="3" y1="9" x2="9" y2="3" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>';
+  // Busy / After Conversation Work → solid, no inner icon
+  return "";
+}
+
 function esc(s: string): string {
   const t = document.createElement("span");
   t.textContent = s;
@@ -145,6 +170,19 @@ function getInitials(name: string): string {
 
 interface QueueInfo { id: string; name: string; }
 interface AgentInfo { id: string; name: string; presenceId: string | null; presenceName: string; since: string | null; }
+interface AgentWithQueues extends AgentInfo { queues: QueueInfo[]; }
+
+function statusOrder(a: AgentInfo): number {
+  const l = a.presenceName.toLowerCase();
+  if (l.indexOf("available") > -1) return 0;
+  if (l.indexOf("busy") > -1) return 1;
+  if (l.indexOf("do not disturb") > -1) return 2;
+  if (l.indexOf("away") > -1 || l.indexOf("appear away") > -1) return 3;
+  if (l.indexOf("offline") > -1 || l.indexOf("inactive") > -1) return 5;
+  return 4;
+}
+
+const LOADING_HTML = `<div class="qh-loading"><span class="qh-loading-dot"></span><span class="qh-loading-dot" style="animation-delay:.2s"></span><span class="qh-loading-dot" style="animation-delay:.4s"></span></div>`;
 
 /* ═══════════════════════════════════════════════════════════════
    Presence Timer Panel
@@ -216,7 +254,7 @@ class PresenceTimerPanel {
       </div>
       <div class="summary" data-ref="summary"></div>
       <div class="hist">
-        <div class="hist-title">Timeline</div>
+        <div class="hist-title-row"><span class="hist-title">Timeline</span><button class="hist-refresh" data-ref="refreshBtn" title="Refresh">↻</button></div>
         <div data-ref="timeline"></div>
       </div>`;
 
@@ -233,6 +271,7 @@ class PresenceTimerPanel {
     this._elCalBtn = this._ref("calBtn") as HTMLButtonElement;
     this._elCalOverlay = this._ref("calOverlay") as HTMLDivElement;
 
+    (this._ref("refreshBtn") as HTMLButtonElement).addEventListener("click", () => this._loadDay());
     this._elPrev.addEventListener("click", () => this._shiftDay(-1));
     this._elNext.addEventListener("click", () => this._shiftDay(1));
     this._elToday.addEventListener("click", () => {
@@ -298,18 +337,25 @@ class PresenceTimerPanel {
     return { id: pid, name: pName(pid, this._s.pmap), since };
   }
 
+  private static _tzOffsetStr(): string {
+    const off = new Date().getTimezoneOffset();
+    const sign = off <= 0 ? "+" : "-";
+    const h = String(Math.floor(Math.abs(off) / 60)).padStart(2, "0");
+    const m = String(Math.abs(off) % 60).padStart(2, "0");
+    return `${sign}${h}:${m}`;
+  }
+
   private async _fetchHistory(date: Date): Promise<ComponentFramework.WebApi.Entity[]> {
-    // Build local-day boundaries as plain ISO strings (no Z suffix)
-    // so Dataverse compares in the user's configured timezone
+    const tz = PresenceTimerPanel._tzOffsetStr();
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, "0");
     const d = String(date.getDate()).padStart(2, "0");
-    const dayStartStr = `${y}-${m}-${d}T00:00:00`;
+    const dayStartStr = `${y}-${m}-${d}T00:00:00${tz}`;
     const next = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
     const ny = next.getFullYear();
     const nm = String(next.getMonth() + 1).padStart(2, "0");
     const nd = String(next.getDate()).padStart(2, "0");
-    const dayEndStr = `${ny}-${nm}-${nd}T00:00:00`;
+    const dayEndStr = `${ny}-${nm}-${nd}T00:00:00${tz}`;
     const filter =
       `_msdyn_agentid_value eq ${this._s.userId}` +
       ` and msdyn_starttime ge ${dayStartStr}` +
@@ -329,6 +375,7 @@ class PresenceTimerPanel {
   private _render(p: { id: string; name: string }): void {
     this._elName.textContent = p.name;
     this._elDot.style.background = color(p.name);
+    this._elDot.innerHTML = statusIcon(p.name, "lg");
     this._elErr.style.display = "none";
   }
 
@@ -370,7 +417,7 @@ class PresenceTimerPanel {
     const sortedNames = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
     let sumHtml = "";
     for (const n of sortedNames) {
-      sumHtml += `<div class="sum-chip"><div class="sum-dot" style="background:${color(n)}"></div><span>${esc(n)}</span> <span class="sum-val">${fmtShort(totals[n])}</span></div>`;
+      sumHtml += `<div class="sum-chip"><div class="sum-dot" style="background:${color(n)}">${statusIcon(n, "sm")}</div><span>${esc(n)}</span> <span class="sum-val">${fmtShort(totals[n])}</span></div>`;
     }
     this._elSum.innerHTML = sumHtml;
 
@@ -382,7 +429,7 @@ class PresenceTimerPanel {
       const en = r["msdyn_endtime"] ? new Date(r["msdyn_endtime"] as string).getTime() : Date.now();
       const dur = en - st;
       const barPct = maxDur > 0 ? Math.max(4, Math.round((dur / maxDur) * 100)) : 100;
-      html += `<div class="tl-item"><div class="tl-dot" style="background:${c}"></div><div class="tl-body"><div class="tl-row"><span class="tl-name">${esc(name)}</span><span class="tl-dur">${fmtShort(dur)}</span></div><div class="tl-time">${fmtTimeRange(r["msdyn_starttime"] as string, (r["msdyn_endtime"] as string) || null)}</div><div class="tl-bar" style="width:${barPct}%;background:${c}"></div></div></div>`;
+      html += `<div class="tl-item"><div class="tl-dot" style="background:${c}">${statusIcon(name, "lg")}</div><div class="tl-body"><div class="tl-row"><span class="tl-name">${esc(name)}</span><span class="tl-dur">${fmtShort(dur)}</span></div><div class="tl-time">${fmtTimeRange(r["msdyn_starttime"] as string, (r["msdyn_endtime"] as string) || null)}</div><div class="tl-bar" style="width:${barPct}%;background:${c}"></div></div></div>`;
     }
     html += "</div>";
     this._elTL.innerHTML = html;
@@ -497,17 +544,25 @@ class QueueHubPanel {
   private _s: SharedServices;
 
   private _queues: QueueInfo[] = [];
-  private _selectedQueue: QueueInfo | null = null;
-  private _agents: AgentInfo[] = [];
   private _pollTimer: number | null = null;
-  private _view: "queues" | "agents" = "queues";
+  private _activeTab: "queues" | "agents" = "queues";
+  private _dataLoaded = false;
+
+  // Queues subtab state
+  private _selectedQueueIds = new Set<string>();
+  private _queueAgents: AgentInfo[] = [];
+  private _queuesCollapsed = false;
+
+  // Agents subtab state
+  private _allAgents: AgentWithQueues[] = [];
+  private _expandedAgentIds = new Set<string>();
 
   private _elSearch!: HTMLInputElement;
   private _elSubtitle!: HTMLDivElement;
   private _elList!: HTMLDivElement;
-  private _elBack!: HTMLButtonElement;
-  private _elHeader!: HTMLDivElement;
   private _elSummary!: HTMLDivElement;
+  private _elTabQueues!: HTMLButtonElement;
+  private _elTabAgents!: HTMLButtonElement;
 
   constructor(container: HTMLDivElement, services: SharedServices) {
     this._c = container;
@@ -526,29 +581,27 @@ class QueueHubPanel {
 
   private _buildUI(): void {
     this._c.innerHTML = `
+      <div class="qh-subtitle" data-ref="subtitle">Real-time visibility into your queues and team availability</div>
+      <div class="qh-tabs" data-ref="tabs">
+        <button class="qh-tab qh-tab--active" data-ref="tab-queues" data-tab="queues">Queues</button>
+        <button class="qh-tab" data-ref="tab-agents" data-tab="agents">Agents</button>
+      </div>
       <div class="qh-search-wrap">
         <input class="qh-search" data-ref="search" placeholder="Search queues\u2026" autocomplete="off" />
       </div>
-      <div class="qh-subtitle" data-ref="subtitle">Monitor your team\u2019s availability across every queue you belong to<br>\u2014 in real time \u2014</div>
-      <button class="qh-back" data-ref="back" style="display:none">
-        <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M12.35 3.15a.5.5 0 0 1 0 .7L6.21 10l6.14 6.15a.5.5 0 0 1-.7.7l-6.5-6.5a.5.5 0 0 1 0-.7l6.5-6.5a.5.5 0 0 1 .7 0Z"/></svg>
-        <span>All Queues</span>
-      </button>
-      <div class="qh-header" data-ref="header" style="display:none"></div>
       <div class="qh-summary" data-ref="summary" style="display:none"></div>
-      <div class="qh-list" data-ref="list">
-        <div class="qh-loading"><span class="qh-loading-dot"></span><span class="qh-loading-dot" style="animation-delay:.2s"></span><span class="qh-loading-dot" style="animation-delay:.4s"></span></div>
-      </div>`;
+      <div class="qh-list" data-ref="list">${LOADING_HTML}</div>`;
 
     this._elSearch = this._ref("search") as HTMLInputElement;
     this._elSubtitle = this._ref("subtitle") as HTMLDivElement;
     this._elList = this._ref("list") as HTMLDivElement;
-    this._elBack = this._ref("back") as HTMLButtonElement;
-    this._elHeader = this._ref("header") as HTMLDivElement;
     this._elSummary = this._ref("summary") as HTMLDivElement;
+    this._elTabQueues = this._ref("tab-queues") as HTMLButtonElement;
+    this._elTabAgents = this._ref("tab-agents") as HTMLButtonElement;
 
     this._elSearch.addEventListener("input", () => this._onSearch());
-    this._elBack.addEventListener("click", () => this._showQueues());
+    this._elTabQueues.addEventListener("click", () => this._switchTab("queues"));
+    this._elTabAgents.addEventListener("click", () => this._switchTab("agents"));
   }
 
   private _ref(name: string): HTMLElement {
@@ -558,11 +611,14 @@ class QueueHubPanel {
   private async _initialize(): Promise<void> {
     try {
       await this._loadQueues();
-      this._renderQueues();
+      this._dataLoaded = true;
+      this._renderQueuesTab();
     } catch (e: unknown) {
       this._elList.innerHTML = `<div class="qh-empty">${esc(e instanceof Error ? e.message : String(e))}</div>`;
     }
   }
+
+  /* ── Data loading ── */
 
   private async _loadQueues(): Promise<void> {
     const fetchXml = `<fetch>
@@ -643,14 +699,71 @@ class QueueHubPanel {
     return agents;
   }
 
-  private _renderQueues(filter?: string): void {
-    this._view = "queues";
-    this._elBack.style.display = "none";
-    this._elHeader.style.display = "none";
-    this._elSummary.style.display = "none";
-    this._elSubtitle.style.display = "";
-    this._elSearch.placeholder = "Search queues\u2026";
+  private async _loadAgentsForSelectedQueues(): Promise<AgentInfo[]> {
+    const agentMap: Record<string, AgentInfo> = {};
+    for (const qid of this._selectedQueueIds) {
+      const agents = await this._loadAgentsInQueue(qid);
+      for (const a of agents) {
+        if (!agentMap[a.id]) {
+          agentMap[a.id] = { ...a };
+        } else if (a.presenceId) {
+          agentMap[a.id].presenceId = a.presenceId;
+          agentMap[a.id].presenceName = a.presenceName;
+          agentMap[a.id].since = a.since;
+        }
+      }
+    }
+    return Object.values(agentMap).sort((a, b) => {
+      const diff = statusOrder(a) - statusOrder(b);
+      return diff !== 0 ? diff : a.name.localeCompare(b.name);
+    });
+  }
 
+  private async _loadAllAgentsWithQueues(): Promise<AgentWithQueues[]> {
+    const agentMap: Record<string, AgentWithQueues> = {};
+    for (const q of this._queues) {
+      const agents = await this._loadAgentsInQueue(q.id);
+      for (const a of agents) {
+        if (!agentMap[a.id]) {
+          agentMap[a.id] = { ...a, queues: [] };
+        } else if (a.presenceId) {
+          agentMap[a.id].presenceId = a.presenceId;
+          agentMap[a.id].presenceName = a.presenceName;
+          agentMap[a.id].since = a.since;
+        }
+        agentMap[a.id].queues.push(q);
+      }
+    }
+    return Object.values(agentMap).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /* ── Tab switching ── */
+
+  private _switchTab(tab: "queues" | "agents"): void {
+    if (this._activeTab === tab) return;
+    if (this._pollTimer !== null) { clearInterval(this._pollTimer); this._pollTimer = null; }
+    this._activeTab = tab;
+    this._elSearch.value = "";
+    this._elSummary.style.display = "none";
+    this._elSummary.innerHTML = "";
+
+    this._elTabQueues.classList.toggle("qh-tab--active", tab === "queues");
+    this._elTabAgents.classList.toggle("qh-tab--active", tab === "agents");
+
+    if (tab === "queues") {
+      this._elSearch.placeholder = "Search queues\u2026";
+      this._renderQueuesTab();
+    } else {
+      this._elSearch.placeholder = "Search agents\u2026";
+      this._renderAgentsTab();
+    }
+  }
+
+  /* ══════════════════════════════════
+     QUEUES SUBTAB
+     ══════════════════════════════════ */
+
+  private _renderQueuesTab(filter?: string): void {
     let queues = this._queues;
     if (filter) {
       const lf = filter.toLowerCase();
@@ -662,146 +775,294 @@ class QueueHubPanel {
       return;
     }
 
-    let html = "";
+    const selCount = this._selectedQueueIds.size;
+    const collapsed = this._queuesCollapsed;
+    const selQueues = selCount ? this._queues.filter(q => this._selectedQueueIds.has(q.id)) : [];
+    const collapseLabel = collapsed
+      ? `${queues.length} queue${queues.length !== 1 ? "s" : ""}${selCount ? ` \u00b7 ${selCount} selected` : ""}`
+      : `${queues.length} queue${queues.length !== 1 ? "s" : ""}`;
+
+    let html = `<div class="qh-collapse-hdr" data-ref="collapse-toggle">
+      <svg class="qh-collapse-arrow${collapsed ? "" : " qh-collapse-arrow--open"}" width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M15.85 7.65a.5.5 0 0 0-.7 0L10 12.79 4.85 7.65a.5.5 0 0 0-.7.7l5.5 5.5a.5.5 0 0 0 .7 0l5.5-5.5a.5.5 0 0 0 0-.7Z"/></svg>
+      <span class="qh-collapse-label">${collapseLabel}</span>
+    </div>`;
+    if (collapsed && selQueues.length) {
+      html += `<div class="qh-selected-queues">${selQueues.map(q => `<span class="qh-sel-tag">${esc(q.name)}<span class="qh-sel-tag-x" data-qid="${esc(q.id)}">&times;</span></span>`).join("")}</div>`;
+    }
+    html += `<div class="qh-collapse-body" style="display:${collapsed ? "none" : "block"}">`;
     for (const q of queues) {
-      html += `<div class="qh-item" data-qid="${esc(q.id)}">
+      const checked = this._selectedQueueIds.has(q.id);
+      html += `<div class="qh-item qh-item--selectable${checked ? " qh-item--selected" : ""}" data-qid="${esc(q.id)}">
+        <label class="qh-checkbox-wrap" onclick="event.stopPropagation()">
+          <input type="checkbox" class="qh-checkbox" data-qid="${esc(q.id)}" ${checked ? "checked" : ""} />
+          <span class="qh-checkbox-custom"></span>
+        </label>
         <div class="qh-item-icon">${esc(getInitials(q.name))}</div>
         <div class="qh-item-body">
           <div class="qh-item-name">${esc(q.name)}</div>
         </div>
-        <svg class="qh-item-arrow" width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M7.65 3.15a.5.5 0 0 0 0 .7L13.79 10l-6.14 6.15a.5.5 0 0 0 .7.7l6.5-6.5a.5.5 0 0 0 0-.7l-6.5-6.5a.5.5 0 0 0-.7 0Z"/></svg>
       </div>`;
     }
+    html += `</div>`;
+
+    if (selCount > 0) {
+      html += `<div class="qh-results-divider"><span>Agents in selected queues</span></div>`;
+      if (!collapsed) html += `<div class="qh-selected-queues">${selQueues.map(q => `<span class="qh-sel-tag">${esc(q.name)}<span class="qh-sel-tag-x" data-qid="${esc(q.id)}">&times;</span></span>`).join("")}</div>`;
+      html += `<div data-ref="queue-agents">${LOADING_HTML}</div>`;
+    }
+
     this._elList.innerHTML = html;
 
-    this._elList.querySelectorAll(".qh-item").forEach(el => {
-      el.addEventListener("click", () => {
-        const qid = (el as HTMLElement).dataset.qid!;
-        const queue = this._queues.find(q => q.id === qid);
-        if (queue) this._openQueue(queue);
+    // Bind collapse toggle
+    const colToggle = this._c.querySelector('[data-ref="collapse-toggle"]');
+    if (colToggle) {
+      colToggle.addEventListener("click", () => {
+        this._queuesCollapsed = !this._queuesCollapsed;
+        this._renderQueuesTab(this._elSearch.value.trim() || undefined);
+        if (this._selectedQueueIds.size > 0) this._loadAndRenderQueueAgents();
+      });
+    }
+
+    // Bind checkbox events
+    this._elList.querySelectorAll(".qh-checkbox").forEach(cb => {
+      cb.addEventListener("change", (ev) => {
+        const input = ev.target as HTMLInputElement;
+        const qid = input.dataset.qid!;
+        if (input.checked) {
+          this._selectedQueueIds.add(qid);
+        } else {
+          this._selectedQueueIds.delete(qid);
+        }
+        this._renderQueuesTab(this._elSearch.value.trim() || undefined);
+        if (this._selectedQueueIds.size > 0) {
+          this._loadAndRenderQueueAgents();
+        }
       });
     });
-  }
 
-  private async _openQueue(queue: QueueInfo): Promise<void> {
-    this._selectedQueue = queue;
-    this._view = "agents";
-    this._elSearch.value = "";
-    this._elSearch.placeholder = "Search agents\u2026";
-    this._elBack.style.display = "";
-    this._elSubtitle.style.display = "none";
+    // Also allow clicking the row to toggle
+    this._elList.querySelectorAll(".qh-item--selectable").forEach(el => {
+      el.addEventListener("click", () => {
+        const qid = (el as HTMLElement).dataset.qid!;
+        const cb = el.querySelector(".qh-checkbox") as HTMLInputElement;
+        cb.checked = !cb.checked;
+        cb.dispatchEvent(new Event("change"));
+      });
+    });
 
-    this._elHeader.style.display = "";
-    this._elHeader.innerHTML = `
-      <div>
-        <div class="qh-header-text">${esc(queue.name)}</div>
-        <div class="qh-header-count">Loading agents\u2026</div>
-      </div>`;
-    this._elSummary.style.display = "none";
-    this._elSummary.innerHTML = "";
-    this._elList.innerHTML = `<div class="qh-loading"><span class="qh-loading-dot"></span><span class="qh-loading-dot" style="animation-delay:.2s"></span><span class="qh-loading-dot" style="animation-delay:.4s"></span></div>`;
+    // Bind tag remove buttons
+    this._elList.querySelectorAll(".qh-sel-tag-x").forEach(btn => {
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const qid = (btn as HTMLElement).dataset.qid!;
+        this._selectedQueueIds.delete(qid);
+        this._renderQueuesTab(this._elSearch.value.trim() || undefined);
+        if (this._selectedQueueIds.size > 0) this._loadAndRenderQueueAgents();
+      });
+    });
 
-    if (this._pollTimer !== null) { clearInterval(this._pollTimer); this._pollTimer = null; }
-
-    try {
-      this._agents = await this._loadAgentsInQueue(queue.id);
-      this._renderAgents();
-      this._pollTimer = window.setInterval(() => this._pollAgents(), POLL_QUEUE_MS);
-    } catch (e: unknown) {
-      this._elList.innerHTML = `<div class="qh-empty">${esc(e instanceof Error ? e.message : String(e))}</div>`;
+    if (selCount > 0) {
+      this._loadAndRenderQueueAgents();
     }
   }
 
-  private _renderAgents(filter?: string): void {
-    let agents = this._agents;
+  private async _loadAndRenderQueueAgents(): Promise<void> {
+    const target = this._c.querySelector('[data-ref="queue-agents"]') as HTMLDivElement;
+    if (!target) return;
+
+    try {
+      this._queueAgents = await this._loadAgentsForSelectedQueues();
+      this._renderQueueAgentsSection(target);
+      if (this._pollTimer !== null) clearInterval(this._pollTimer);
+      this._pollTimer = window.setInterval(() => this._pollQueueAgents(), POLL_QUEUE_MS);
+    } catch (e: unknown) {
+      target.innerHTML = `<div class="qh-empty">${esc(e instanceof Error ? e.message : String(e))}</div>`;
+    }
+  }
+
+  private _renderQueueAgentsSection(target: HTMLElement): void {
+    const agents = this._queueAgents;
+    const totals: Record<string, number> = {};
+    for (const a of agents) {
+      totals[a.presenceName] = (totals[a.presenceName] || 0) + 1;
+    }
+    const sorted = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
+    let sumHtml = `<div class="qh-summary" style="display:${sorted.length ? "flex" : "none"}">`;
+    for (const n of sorted) {
+      sumHtml += `<div class="qh-chip"><div class="qh-chip-dot" style="background:${color(n)}">${statusIcon(n, "sm")}</div><span class="qh-chip-count">${totals[n]}</span><span>${esc(n)}</span></div>`;
+    }
+    sumHtml += `</div>`;
+
+    if (!agents.length) {
+      target.innerHTML = `${sumHtml}<div class="qh-empty">No agents in selected queues</div>`;
+      return;
+    }
+
+    let html = sumHtml;
+    html += `<div class="qh-results-count">${agents.length} agent${agents.length !== 1 ? "s" : ""}</div>`;
+    for (const a of agents) {
+      html += this._agentCardHtml(a);
+    }
+    target.innerHTML = html;
+  }
+
+  private async _pollQueueAgents(): Promise<void> {
+    if (this._activeTab !== "queues" || this._selectedQueueIds.size === 0) return;
+    try {
+      this._queueAgents = await this._loadAgentsForSelectedQueues();
+      const target = this._c.querySelector('[data-ref="queue-agents"]') as HTMLDivElement;
+      if (target) this._renderQueueAgentsSection(target);
+    } catch {
+      // silently retry
+    }
+  }
+
+  /* ══════════════════════════════════
+     AGENTS SUBTAB
+     ══════════════════════════════════ */
+
+  private async _renderAgentsTab(filter?: string): Promise<void> {
+    if (!this._allAgents.length || !this._dataLoaded) {
+      this._elList.innerHTML = LOADING_HTML;
+      try {
+        this._allAgents = await this._loadAllAgentsWithQueues();
+      } catch (e: unknown) {
+        this._elList.innerHTML = `<div class="qh-empty">${esc(e instanceof Error ? e.message : String(e))}</div>`;
+        return;
+      }
+    }
+
+    let agents = this._allAgents;
     if (filter) {
       const lf = filter.toLowerCase();
       agents = agents.filter(a => a.name.toLowerCase().indexOf(lf) > -1);
     }
 
-    const countEl = this._elHeader.querySelector(".qh-header-count");
-    if (countEl) countEl.textContent = `${this._agents.length} agent${this._agents.length !== 1 ? "s" : ""}`;
-
-    const totals: Record<string, number> = {};
-    for (const a of this._agents) {
-      totals[a.presenceName] = (totals[a.presenceName] || 0) + 1;
-    }
-    const sorted = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
-    let sumHtml = "";
-    for (const n of sorted) {
-      sumHtml += `<div class="qh-chip"><div class="qh-chip-dot" style="background:${color(n)}"></div><span class="qh-chip-count">${totals[n]}</span><span>${esc(n)}</span></div>`;
-    }
-    this._elSummary.innerHTML = sumHtml;
-    this._elSummary.style.display = sorted.length ? "" : "none";
-
     if (!agents.length) {
-      this._elList.innerHTML = `<div class="qh-empty">${filter ? "No agents match your search" : "No agents in this queue"}</div>`;
+      this._elList.innerHTML = `<div class="qh-empty">${filter ? "No agents match your search" : "No agents found"}</div>`;
       return;
     }
 
-    const statusOrder = (a: AgentInfo): number => {
-      const l = a.presenceName.toLowerCase();
-      if (l.indexOf("available") > -1) return 0;
-      if (l.indexOf("busy") > -1) return 1;
-      if (l.indexOf("do not disturb") > -1) return 2;
-      if (l.indexOf("away") > -1 || l.indexOf("appear away") > -1) return 3;
-      if (l.indexOf("offline") > -1 || l.indexOf("inactive") > -1) return 5;
-      return 4;
-    };
     agents = [...agents].sort((a, b) => {
       const diff = statusOrder(a) - statusOrder(b);
       return diff !== 0 ? diff : a.name.localeCompare(b.name);
     });
 
+    // Status summary chips
+    const totals: Record<string, number> = {};
+    for (const a of this._allAgents) {
+      totals[a.presenceName] = (totals[a.presenceName] || 0) + 1;
+    }
+    const sortedStatuses = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
+    let sumHtml = `<div class="qh-summary" style="display:${sortedStatuses.length ? "flex" : "none"}">`;
+    for (const n of sortedStatuses) {
+      sumHtml += `<div class="qh-chip"><div class="qh-chip-dot" style="background:${color(n)}">${statusIcon(n, "sm")}</div><span class="qh-chip-count">${totals[n]}</span><span>${esc(n)}</span></div>`;
+    }
+    sumHtml += `</div>`;
+
     const clientUrl = getClientUrl();
     let html = "";
     for (const a of agents) {
+      const expanded = this._expandedAgentIds.has(a.id);
       const col = color(a.presenceName);
       const sinceStr = a.since ? fmtShort(Date.now() - new Date(a.since).getTime()) : "";
       const isMe = a.id === this._s.userId;
       const initials = esc(getInitials(a.name));
       const imgUrl = `${clientUrl}/api/data/v9.2/systemusers(${a.id})/entityimage/$value`;
       const photoHtml = `<img class="qh-agent-photo" src="${esc(imgUrl)}" alt="" onload="this.parentElement.style.background='transparent'" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><span class="qh-agent-initials" style="display:none">${initials}</span>`;
-      html += `<div class="qh-agent">
-        <div class="qh-agent-avatar" style="background:${isMe ? "#e0ecff" : "#f0f0f0"};color:${isMe ? "#0078d4" : "#666"}">
-          ${photoHtml}
-          <div class="qh-agent-dot" style="background:${col}"></div>
+
+      html += `<div class="qh-agent-expandable${expanded ? " qh-agent-expandable--open" : ""}" data-aid="${esc(a.id)}">
+        <div class="qh-agent qh-agent--clickable">
+          <div class="qh-agent-avatar" style="background:${isMe ? "#e0ecff" : "#f0f0f0"};color:${isMe ? "#0078d4" : "#666"}">
+            ${photoHtml}
+            <div class="qh-agent-dot" style="background:${col}">${statusIcon(a.presenceName, "sm")}</div>
+          </div>
+          <div class="qh-agent-body">
+            <div class="qh-agent-name">${esc(a.name)}</div>
+            <div class="qh-agent-status"><span style="color:${col}">${esc(a.presenceName)}</span>${sinceStr ? ` \u00b7 ${esc(sinceStr)}` : ""}</div>
+          </div>
+          ${isMe ? '<span class="qh-agent-you">You</span>' : ""}
+          <span class="qh-agent-queue-count">${a.queues.length} queue${a.queues.length !== 1 ? "s" : ""}</span>
+          <svg class="qh-expand-arrow${expanded ? " qh-expand-arrow--open" : ""}" width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M15.85 7.65a.5.5 0 0 0-.7 0L10 12.79 4.85 7.65a.5.5 0 0 0-.7.7l5.5 5.5a.5.5 0 0 0 .7 0l5.5-5.5a.5.5 0 0 0 0-.7Z"/></svg>
         </div>
-        <div class="qh-agent-body">
-          <div class="qh-agent-name">${esc(a.name)}</div>
-          <div class="qh-agent-status"><span style="color:${col}">${esc(a.presenceName)}</span>${sinceStr ? ` \u00b7 ${esc(sinceStr)}` : ""}</div>
+        <div class="qh-agent-queues" style="display:${expanded ? "block" : "none"}">
+          ${a.queues.map(q => `<div class="qh-agent-queue-item">
+            <div class="qh-item-icon qh-item-icon--sm">${esc(getInitials(q.name))}</div>
+            <span>${esc(q.name)}</span>
+          </div>`).join("")}
         </div>
-        ${isMe ? '<span class="qh-agent-you">You</span>' : ""}
       </div>`;
     }
-    this._elList.innerHTML = html;
+
+    this._elList.innerHTML = sumHtml + html;
+
+    // Bind expand/collapse
+    this._elList.querySelectorAll(".qh-agent--clickable").forEach(el => {
+      el.addEventListener("click", () => {
+        const wrapper = el.closest(".qh-agent-expandable") as HTMLElement;
+        const aid = wrapper.dataset.aid!;
+        const queuesDiv = wrapper.querySelector(".qh-agent-queues") as HTMLElement;
+        const arrow = wrapper.querySelector(".qh-expand-arrow") as HTMLElement;
+        if (this._expandedAgentIds.has(aid)) {
+          this._expandedAgentIds.delete(aid);
+          queuesDiv.style.display = "none";
+          wrapper.classList.remove("qh-agent-expandable--open");
+          arrow.classList.remove("qh-expand-arrow--open");
+        } else {
+          this._expandedAgentIds.add(aid);
+          queuesDiv.style.display = "block";
+          wrapper.classList.add("qh-agent-expandable--open");
+          arrow.classList.add("qh-expand-arrow--open");
+        }
+      });
+    });
+
+    if (this._pollTimer !== null) clearInterval(this._pollTimer);
+    this._pollTimer = window.setInterval(() => this._pollAgentsTab(), POLL_QUEUE_MS);
   }
 
-  private async _pollAgents(): Promise<void> {
-    if (this._view !== "agents" || !this._selectedQueue) return;
+  private async _pollAgentsTab(): Promise<void> {
+    if (this._activeTab !== "agents") return;
     try {
-      this._agents = await this._loadAgentsInQueue(this._selectedQueue.id);
-      this._renderAgents(this._elSearch.value.trim() || undefined);
+      this._allAgents = await this._loadAllAgentsWithQueues();
+      this._renderAgentsTab(this._elSearch.value.trim() || undefined);
     } catch {
-      // silently retry next poll
+      // silently retry
     }
   }
+
+  /* ── Shared agent card HTML ── */
+
+  private _agentCardHtml(a: AgentInfo): string {
+    const col = color(a.presenceName);
+    const sinceStr = a.since ? fmtShort(Date.now() - new Date(a.since).getTime()) : "";
+    const isMe = a.id === this._s.userId;
+    const initials = esc(getInitials(a.name));
+    const clientUrl = getClientUrl();
+    const imgUrl = `${clientUrl}/api/data/v9.2/systemusers(${a.id})/entityimage/$value`;
+    const photoHtml = `<img class="qh-agent-photo" src="${esc(imgUrl)}" alt="" onload="this.parentElement.style.background='transparent'" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><span class="qh-agent-initials" style="display:none">${initials}</span>`;
+    return `<div class="qh-agent">
+      <div class="qh-agent-avatar" style="background:${isMe ? "#e0ecff" : "#f0f0f0"};color:${isMe ? "#0078d4" : "#666"}">
+        ${photoHtml}
+        <div class="qh-agent-dot" style="background:${col}">${statusIcon(a.presenceName, "sm")}</div>
+      </div>
+      <div class="qh-agent-body">
+        <div class="qh-agent-name">${esc(a.name)}</div>
+        <div class="qh-agent-status"><span style="color:${col}">${esc(a.presenceName)}</span>${sinceStr ? ` \u00b7 ${esc(sinceStr)}` : ""}</div>
+      </div>
+      ${isMe ? '<span class="qh-agent-you">You</span>' : ""}
+    </div>`;
+  }
+
+  /* ── Search ── */
 
   private _onSearch(): void {
     const val = this._elSearch.value.trim();
-    if (this._view === "queues") {
-      this._renderQueues(val || undefined);
+    if (this._activeTab === "queues") {
+      this._renderQueuesTab(val || undefined);
     } else {
-      this._renderAgents(val || undefined);
+      this._renderAgentsTab(val || undefined);
     }
-  }
-
-  private _showQueues(): void {
-    if (this._pollTimer !== null) { clearInterval(this._pollTimer); this._pollTimer = null; }
-    this._selectedQueue = null;
-    this._agents = [];
-    this._elSearch.value = "";
-    this._renderQueues();
   }
 }
 
