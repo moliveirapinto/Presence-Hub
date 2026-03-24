@@ -19,3 +19,13 @@
 
 # macos
 .DS_Store
+
+# solution packaging (not used)
+/Solution/
+/Solution_old/
+
+# exported zips
+*.zip
+
+# eslint backups
+*.bak
