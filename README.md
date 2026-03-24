@@ -1,4 +1,4 @@
-# Presence Hub — PCF Control for Dynamics 365 Customer Service
+# Presence Hub
 
 A **Power Apps Component Framework (PCF)** control designed for the **Dynamics 365 Customer Service workspace productivity pane**. It combines [Presence Timer](https://github.com/moliveirapinto/modern-sla-timer-pcf) and [Queue Hub](https://github.com/moliveirapinto/Queue-Hub) into a single two-tab tool with shared initialization.
 
