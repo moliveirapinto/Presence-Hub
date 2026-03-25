@@ -581,7 +581,7 @@ class QueueHubPanel {
 
   private _buildUI(): void {
     this._c.innerHTML = `
-      <div class="qh-subtitle" data-ref="subtitle"><svg class="qh-info-icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M8 7.5a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-1 0V8a.5.5 0 0 1 .5-.5ZM8 5.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM2 8a6 6 0 1 1 12 0A6 6 0 0 1 2 8Zm6-5a5 5 0 1 0 0 10A5 5 0 0 0 8 3Z"/></svg> Check agents\u2019 presence status and queue membership in real time.</div>
+      <div class="qh-subtitle" data-ref="subtitle">Check agents\u2019 presence status and queue membership in real-time.</div>
       <div class="qh-tabs" data-ref="tabs">
         <button class="qh-tab qh-tab--active" data-ref="tab-queues" data-tab="queues">Queues</button>
         <button class="qh-tab" data-ref="tab-agents" data-tab="agents">Agents</button>
@@ -1099,6 +1099,7 @@ export class PresenceHub implements ComponentFramework.StandardControl<IInputs, 
       <div class="ph-tabs">
         <button class="ph-tab ph-tab-active" data-tab="presence">Presence History</button>
         <button class="ph-tab" data-tab="queues">Queue Hub</button>
+        <svg class="ph-info-icon" viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M8 7.5a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-1 0V8a.5.5 0 0 1 .5-.5ZM8 5.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM2 8a6 6 0 1 1 12 0A6 6 0 0 1 2 8Zm6-5a5 5 0 1 0 0 10A5 5 0 0 0 8 3Z"/></svg>
       </div>
       <div class="ph-panel" data-panel="presence"></div>
       <div class="ph-panel" data-panel="queues" style="display:none"></div>`;

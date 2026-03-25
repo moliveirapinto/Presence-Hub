@@ -50,6 +50,14 @@
   background: none;
 }
 
+.ph-info-icon {
+  align-self: center;
+  padding: 0 8px;
+  color: #888;
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+
 .ph-panel {
   flex: 1;
   overflow-y: auto;
@@ -528,18 +536,11 @@
 
 /* ── Subtitle ── */
 .queue-hub .qh-subtitle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
   font-size: 11.5px;
   color: #888;
   margin: 2px 0 10px;
   line-height: 1.45;
-}
-.queue-hub .qh-info-icon {
-  flex-shrink: 0;
-  opacity: 0.8;
+  text-align: center;
 }
 
 /* ── Back button ── */
