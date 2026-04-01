@@ -2,6 +2,8 @@
 
 A **Power Apps Component Framework (PCF)** control designed for the **Dynamics 365 Customer Service workspace productivity pane**. It combines [Presence Timer](https://github.com/moliveirapinto/modern-sla-timer-pcf) and [Queue Hub](https://github.com/moliveirapinto/Queue-Hub) into a single two-tab tool with shared initialization.
 
+This PCF shows the agent’s live and historical availability—like how much break time you still have left—and also displays queue presence, helping ensure other agents are available before you log off.
+
 ![Presence Hub](img/presence_hub.png)
 
 ## Table of Contents
