@@ -440,25 +440,31 @@ class PresenceTimerPanel {
     return { id: pid, name: pName(pid, this._s.pmap), since };
   }
 
-  private static _tzOffsetStr(): string {
-    const off = new Date().getTimezoneOffset();
-    const sign = off <= 0 ? "+" : "-";
-    const h = String(Math.floor(Math.abs(off) / 60)).padStart(2, "0");
-    const m = String(Math.abs(off) % 60).padStart(2, "0");
-    return `${sign}${h}:${m}`;
+  /**
+   * Convert a local Date instant to an OData-safe UTC literal: `yyyy-MM-ddTHH:mm:ssZ`.
+   * We MUST emit UTC (with `Z`), not a numeric offset like `+02:00`, because the literal
+   * `+` inside an OData `$filter` value is URL-decoded to a space by the gateway,
+   * producing an invalid DateTimeOffset (e.g. `2026-05-21T00:00:00 02:00`) and a
+   * `"should be in format 'yyyy-mm-ddThh:mm:ss('.'s+)?(zzzzzz)?'"` error.
+   * Users in negative-offset timezones never saw this (the `-` is safe); EU/Asia did.
+   */
+  private static _toUtcLiteral(d: Date): string {
+    const y = d.getUTCFullYear();
+    const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const da = String(d.getUTCDate()).padStart(2, "0");
+    const h = String(d.getUTCHours()).padStart(2, "0");
+    const mi = String(d.getUTCMinutes()).padStart(2, "0");
+    const s = String(d.getUTCSeconds()).padStart(2, "0");
+    return `${y}-${mo}-${da}T${h}:${mi}:${s}Z`;
   }
 
   private async _fetchHistory(date: Date): Promise<ComponentFramework.WebApi.Entity[]> {
-    const tz = PresenceTimerPanel._tzOffsetStr();
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, "0");
-    const d = String(date.getDate()).padStart(2, "0");
-    const dayStartStr = `${y}-${m}-${d}T00:00:00${tz}`;
-    const next = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
-    const ny = next.getFullYear();
-    const nm = String(next.getMonth() + 1).padStart(2, "0");
-    const nd = String(next.getDate()).padStart(2, "0");
-    const dayEndStr = `${ny}-${nm}-${nd}T00:00:00${tz}`;
+    // Build local-day boundaries as instants, then serialize as UTC (`...Z`).
+    // Avoids the OData `+` URL-decoding issue for any browser timezone.
+    const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+    const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1, 0, 0, 0, 0);
+    const dayStartStr = PresenceTimerPanel._toUtcLiteral(dayStart);
+    const dayEndStr = PresenceTimerPanel._toUtcLiteral(dayEnd);
     const filter =
       `_msdyn_agentid_value eq ${this._s.userId}` +
       ` and msdyn_starttime ge ${dayStartStr}` +
