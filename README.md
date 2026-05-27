@@ -94,21 +94,14 @@ That's it — Presence Hub is now in your environment. It's not visible to anyon
 
 The productivity pane is the strip of small icons on the right side of the agent's screen (alongside Smart Assist, Knowledge, etc.). You need to tell it to show Presence Hub there.
 
-1. Open [make.powerapps.com](https://make.powerapps.com) and pick your environment.
-2. Open **Customer Service admin center** (it's one of the apps in your environment).
-3. In the left menu go to **Workspaces** → **Productivity pane**.
-4. Under **Pane tools**, click **+ Add tool** and fill it in:
+1. Open the **Admin Center**.
+2. Click on **Productivity**.
+3. Then **Productivity tools**.
+4. Click **+ New** and fill it in:
 
-   | Field | What to type |
-   |---|---|
-   | **Name** | `Presence Hub` |
-   | **Unique Name** | `mau_presencehub` |
-   | **Control name** | `mau_MauLabs.PresenceHub` *(pick this from the dropdown)* |
-   | **Icon** | Pick any icon you like — a clock or person icon works well. This is what your agents will click. |
+   ![Add productivity tool](img/productivity-tools-new.png)
 
-5. Click **Save**, then make sure the tool is **enabled**.
-6. Add the tool to the **Pane tab configuration** that your agents already use.
-7. Click **Publish** at the top.
+5. Click **Save**.
 
 A new icon now appears in the right-hand pane of the Customer Service workspace.
 
