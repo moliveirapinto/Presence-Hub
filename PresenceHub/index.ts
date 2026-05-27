@@ -314,6 +314,7 @@ class PresenceTimerPanel {
   private _lastRecords: ComponentFramework.WebApi.Entity[] = [];
   private _polling = false;          // reentrancy guard for _poll()
   private _errStreak = 0;            // consecutive poll failures (for backoff)
+  private _skipCount = 0;            // v2.8.3: monotonic tick counter for backoff gating
   private _bootstrapped = false;     // true once first successful presence read happened
 
   private _elDot!: HTMLDivElement;
@@ -373,7 +374,8 @@ class PresenceTimerPanel {
       <div class="hist">
         <div class="hist-title-row"><span class="hist-title">${loc("timeline")}</span><button class="hist-refresh" data-ref="refreshBtn" title="${loc("refresh")}">↻</button></div>
         <div data-ref="timeline"></div>
-      </div>`;
+      </div>
+      <div style="font-size:9px;color:#999;text-align:right;padding:2px 6px 0 0;opacity:.6">PresenceHub v2.8.3</div>`;
 
     this._elDot = this._ref("dot") as HTMLDivElement;
     this._elName = this._ref("sName") as HTMLSpanElement;
@@ -438,10 +440,19 @@ class PresenceTimerPanel {
       "msdyn_agentstatus",
       `?$filter=_msdyn_agentid_value eq ${this._s.userId}&$select=_msdyn_currentpresenceid_value&$top=1`
     );
-    if (!resp.entities || !resp.entities.length) throw new Error("No agent status record found");
+    // v2.8.3: never throw on missing record / null presence. Render "Offline" instead so
+    // the pill always escapes the "Loading\u2026" state on first paint even when the
+    // OmniChannel agent-status row hasn't been initialized yet.
+    if (!resp.entities || !resp.entities.length) {
+      console.warn("[PresenceHub] no msdyn_agentstatus row for user", this._s.userId);
+      return { id: "", name: "Offline", since: null };
+    }
     const rec = resp.entities[0];
     const pid = rec["_msdyn_currentpresenceid_value"] as string;
-    if (!pid) throw new Error("No current presence assigned");
+    if (!pid) {
+      console.warn("[PresenceHub] msdyn_agentstatus has null currentpresenceid for user", this._s.userId);
+      return { id: "", name: "Offline", since: null };
+    }
 
     // Get the real start time from the latest history record (immune to page-refresh resets)
     let since: string | null = null;
@@ -501,10 +512,18 @@ class PresenceTimerPanel {
   }
 
   private _render(p: { id: string; name: string }): void {
-    this._elName.textContent = p.name;
-    this._elDot.style.background = color(p.name);
-    this._elDot.innerHTML = statusIcon(p.name, "lg");
-    this._elErr.style.display = "none";
+    // v2.8.3: defensive null-checks — if the panel was destroyed/re-rendered,
+    // the cached refs may be detached. Re-query before bailing.
+    if (!this._elName || !this._elName.isConnected) {
+      const fresh = this._c.querySelector('[data-ref="sName"]') as HTMLElement | null;
+      if (fresh) this._elName = fresh; else { console.warn("[PresenceHub] _render: sName missing"); return; }
+    }
+    this._elName.textContent = p.name || "Unknown";
+    if (this._elDot) {
+      this._elDot.style.background = color(p.name);
+      this._elDot.innerHTML = statusIcon(p.name, "lg");
+    }
+    if (this._elErr) this._elErr.style.display = "none";
   }
 
   private _showErr(msg: string): void {
@@ -517,11 +536,15 @@ class PresenceTimerPanel {
     if (this._polling) return;
     // Skip while tab is hidden — resume immediately when it becomes visible again.
     if (isTabHidden()) return;
-    // Exponential backoff after consecutive failures: skip up to 6 polls in a row
-    // when we've failed 3+ times. Resets on first success.
+    // v2.8.3: removed broken exponential-backoff modulo (the previous formula
+    // `errStreak % (skip+1) !== 0` permanently locked polling after 3 failures
+    // because errStreak only changed on real attempts, so the modulo never reset).
+    // Track skip counter independently of errStreak so we always retry eventually.
     if (this._errStreak >= 3) {
-      const skip = Math.min(6, this._errStreak - 2);
-      if ((this._errStreak % (skip + 1)) !== 0) return;
+      this._skipCount++;
+      // After 3+ failures, only attempt every Nth poll (N = min(6, streak-2)).
+      const everyN = Math.min(6, this._errStreak - 2);
+      if ((this._skipCount % everyN) !== 0) return;
     }
     this._polling = true;
     try {
@@ -538,6 +561,7 @@ class PresenceTimerPanel {
       }
       this._bootstrapped = true;
       this._errStreak = 0;
+      this._skipCount = 0;
       this._render(p);
       // Self-heal: clear any stale error banner on successful read.
       if (this._elErr.style.display !== "none") this._elErr.style.display = "none";
@@ -1342,17 +1366,22 @@ class QueueHubPanel {
   private async _fetchAgentHistory(agentId: string): Promise<ComponentFramework.WebApi.Entity[]> {
     const cached = this._agentHistoryCache[agentId];
     if (cached) return cached;
-    const tz = PresenceTimerPanel._tzOffsetStr();
+    // v2.8.3: use UTC literals (matches PresenceTimerPanel._toUtcLiteral fix) to avoid
+    // OData `+` URL-decode bug in positive-offset timezones.
     const today = new Date();
-    const y = today.getFullYear();
-    const m = String(today.getMonth() + 1).padStart(2, "0");
-    const d = String(today.getDate()).padStart(2, "0");
-    const dayStart = `${y}-${m}-${d}T00:00:00${tz}`;
-    const next = new Date(y, today.getMonth(), today.getDate() + 1);
-    const ny = next.getFullYear();
-    const nm = String(next.getMonth() + 1).padStart(2, "0");
-    const nd = String(next.getDate()).padStart(2, "0");
-    const dayEnd = `${ny}-${nm}-${nd}T00:00:00${tz}`;
+    const dayStartDt = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
+    const dayEndDt = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1, 0, 0, 0, 0);
+    const toUtc = (d: Date): string => {
+      const y = d.getUTCFullYear();
+      const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const da = String(d.getUTCDate()).padStart(2, "0");
+      const h = String(d.getUTCHours()).padStart(2, "0");
+      const mi = String(d.getUTCMinutes()).padStart(2, "0");
+      const s = String(d.getUTCSeconds()).padStart(2, "0");
+      return `${y}-${mo}-${da}T${h}:${mi}:${s}Z`;
+    };
+    const dayStart = toUtc(dayStartDt);
+    const dayEnd = toUtc(dayEndDt);
     const filter =
       `_msdyn_agentid_value eq ${agentId}` +
       ` and msdyn_starttime ge ${dayStart}` +
