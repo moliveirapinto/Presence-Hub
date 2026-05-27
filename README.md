@@ -81,25 +81,12 @@ You do **not** need to write any code or talk to your developers. The whole inst
 
 ## Step 1 — Install Presence Hub in your environment
 
-Pick whichever option you're most comfortable with.
-
-### Easiest — import the ready-made solution
-
 1. Go to the [Releases page](../../releases) and download the latest **solution zip file**.
 2. Open [make.powerapps.com](https://make.powerapps.com) and choose the environment you want to install into (top-right corner).
 3. In the left menu click **Solutions**, then **Import solution** at the top.
 4. Upload the zip file and click through the wizard. When it finishes, click **Publish all customizations**.
 
 That's it — Presence Hub is now in your environment. It's not visible to anyone yet; the next two steps switch it on.
-
-### Alternative — use the Power Platform command line
-
-If your IT team prefers the command line:
-
-```bash
-pac auth create --url https://YOUR_ORG.crm.dynamics.com
-pac solution import --path ./solution.zip
-```
 
 ---
 
