@@ -111,10 +111,10 @@ A new icon now appears in the right-hand pane of the Customer Service workspace.
 
 In Dynamics 365, what an agent sees in the productivity pane is controlled by their **Agent experience profile**. To give Presence Hub to specific agents:
 
-1. **Customer Service admin center** → **Agent experience** → **Workspaces** → **Agent experience profiles**.
-2. Open the profile that has the Presence Hub pane tool (for example, *Contact center agent experience profile*).
-3. Scroll to the **Users** section and click **Add users**.
-4. Pick the agents who should see Presence Hub and **Save**.
+1. **Customer Service admin center** → **Workspaces** → **Experience profiles**.
+2. Open the profile that you want Presence Hub to be part of.
+3. In **productivity pane**, make sure to enable **Presence Hub**.
+4. Then **Save**.
 
 They'll see the new icon the next time they refresh their browser.
 
