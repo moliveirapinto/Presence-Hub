@@ -1,225 +1,232 @@
 # Presence Hub
 
-A **Power Apps Component Framework (PCF)** control designed for the **Dynamics 365 Customer Service workspace productivity pane**. It combines [Presence Timer](https://github.com/moliveirapinto/modern-sla-timer-pcf) and [Queue Hub](https://github.com/moliveirapinto/Queue-Hub) into a single two-tab tool with shared initialization.
+**Know how long you've been on break. See who else is around before you log off.**
 
-This PCF shows the agent’s live and historical availability—like how much break time you still have left—and also displays queue presence, helping ensure other agents are available before you log off.
+Presence Hub is a small panel that lives inside the **Dynamics 365 Customer Service workspace** (the app your agents use every day). It shows your own availability status — and the status of everyone in your queues — in one place, so your team can keep an eye on coverage without picking up the phone or pinging Teams.
 
 ![Presence Hub](img/presence_hub.png)
 
+---
+
 ## Table of Contents
 
-- [What It Does](#what-it-does)
-- [Presence Status Colors](#presence-status-colors)
-- [Control Properties](#control-properties)
-- [Prerequisites](#prerequisites)
-- [How to Deploy to Your Dynamics 365 Environment](#how-to-deploy-to-your-dynamics-365-environment)
-- [Configure as a Productivity Pane Tool](#configure-as-a-productivity-pane-tool)
-- [Enabling for Users](#enabling-for-users)
-- [Project Structure](#project-structure)
-- [Data Model](#data-model)
+- [What your agents will see](#what-your-agents-will-see)
+- [Status colors at a glance](#status-colors-at-a-glance)
+- [Before you start](#before-you-start)
+- [Step 1 — Install Presence Hub in your environment](#step-1--install-presence-hub-in-your-environment)
+- [Step 2 — Add Presence Hub to the productivity pane](#step-2--add-presence-hub-to-the-productivity-pane)
+- [Step 3 — Turn it on for your agents](#step-3--turn-it-on-for-your-agents)
+- [Frequently asked questions](#frequently-asked-questions)
+- [For developers](#for-developers)
 - [License](#license)
 
-## What It Does
+---
 
-This control provides a **tabbed layout** inside the productivity pane with two panels:
+## What your agents will see
 
-### Presence History (default tab)
-- Displays the agent's **current presence status** with a color-coded card
-- **Live elapsed timer** showing time in current status — reads from `msdyn_agentstatushistory` so it **survives page refreshes**
-- **Daily timeline** of all presence changes for the selected date
-- **Summary chips** with a breakdown of time spent in each status
-- **Calendar picker** to browse presence history for any past date
-- **Timezone-aware** — day boundaries use the user's local timezone, not UTC
-- **5-second auto-refresh** for near real-time updates
+Presence Hub is a side panel with **two tabs**.
 
-### Queue Hub
-- Lists all **queues the current agent is a member of** (via `queuemembership` N:N)
-- **Search bar** to filter queues by name
-- Click any queue to see all **agents assigned to that queue**
-- Each agent card shows:
-  - **Avatar** with initials and a **presence dot** (color-coded)
-  - **Real-time presence status**
-  - **Duration** since last presence change
-  - **"You" badge** highlighting the current agent
-- **Summary chips** showing status breakdown across the queue
-- **Status-based sorting** — Available agents first, Offline agents last
-- **Profile photos** from Dataverse `entityimage` with initials fallback
-- **10-second auto-refresh**
+### 1. Presence History — *"How long have I been on lunch?"*
 
-## Presence Status Colors
+- A big, color-coded card showing the agent's **current status** (Available, Busy, Away, etc.)
+- A **live timer** counting how long they've been in that status — even if they refresh the page or close the browser, the timer keeps the right time
+- A **timeline of their day** showing every status change
+- **Summary chips** that add it all up: "1h 45m Available · 30m Lunch · 15m Break"
+- A **calendar** so they (or their supervisor) can look back at any past day
+- Always shown in the agent's own local time
+- Refreshes itself every few seconds
+
+### 2. Queue Hub — *"Is anyone else around to take this?"*
+
+- A list of every **queue the agent belongs to**
+- A **search box** to find a queue quickly
+- Click a queue to see **everyone assigned to it**, with:
+  - Their photo (or initials) and a colored dot for their status
+  - What status they're in right now
+  - How long they've been in that status
+  - A "**You**" badge on the agent's own row
+- **Summary chips** showing how many people are Available / Busy / Away in that queue
+- Available agents sort to the top, Offline agents to the bottom
+- Refreshes itself every few seconds
+
+---
+
+## Status colors at a glance
 
 | Status | Color |
 |---|---|
-| Available | Green |
-| Busy | Red |
-| Do Not Disturb | Red |
-| Away / Appear Away | Yellow |
-| After Conversation Work | Pink |
-| Offline / Inactive | Gray |
+| Available | 🟢 Green |
+| Busy | 🔴 Red |
+| Do Not Disturb | 🔴 Red |
+| Away / Appear Away | 🟡 Yellow |
+| After Conversation Work | 🩷 Pink |
+| Offline / Inactive | ⚪ Gray |
 
-## Control Properties
+These match the standard Omnichannel presence colors your agents already know.
 
-| Property | Description | Default |
-|---|---|---|
-| **dummyProp** (SingleLine.Text) | Unused property required by PCF framework | — |
+---
 
-The control uses the **WebAPI** and **Utility** PCF features to query Dataverse directly.
+## Before you start
 
-## Prerequisites
+You'll need:
 
-- Dynamics 365 Customer Service with **Omnichannel for Customer Service** enabled
-- **Productivity pane** configured in your Customer Service workspace app
-- Agents must have an **active Omnichannel presence** for presence data to appear
-- Agents must be **members of at least one queue** for the Queue Hub tab to show results
+- **Dynamics 365 Customer Service** with **Omnichannel for Customer Service** enabled
+- A **Customer Service workspace** app with the **productivity pane** turned on
+- Permission to import solutions and edit the productivity pane (a **System Administrator** or **System Customizer** role is fine)
+- Agents who are **signed in to Omnichannel** and **members of at least one queue** — otherwise there's nothing to show
 
-## How to Deploy to Your Dynamics 365 Environment
+You do **not** need to write any code or talk to your developers. The whole install takes about 10 minutes.
 
-> [!IMPORTANT]
-> After importing the solution, you **must** configure the control as a productivity pane tool — see [Configure as a Productivity Pane Tool](#configure-as-a-productivity-pane-tool) below. The control will not appear in the workspace until this step is completed.
+---
 
-### Option 1: Import the Solution (Recommended)
+## Step 1 — Install Presence Hub in your environment
 
-1. Download the latest solution zip from the [Releases](../../releases) page
-2. Go to your Dynamics 365 environment → **Settings** → **Solutions** (or use [make.powerapps.com](https://make.powerapps.com))
-3. Click **Import** and upload the solution zip
-4. Follow the import wizard and publish all customizations
+Pick whichever option you're most comfortable with.
 
-### Option 2: Import via Power Platform CLI
+### Easiest — import the ready-made solution
+
+1. Go to the [Releases page](../../releases) and download the latest **solution zip file**.
+2. Open [make.powerapps.com](https://make.powerapps.com) and choose the environment you want to install into (top-right corner).
+3. In the left menu click **Solutions**, then **Import solution** at the top.
+4. Upload the zip file and click through the wizard. When it finishes, click **Publish all customizations**.
+
+That's it — Presence Hub is now in your environment. It's not visible to anyone yet; the next two steps switch it on.
+
+### Alternative — use the Power Platform command line
+
+If your IT team prefers the command line:
 
 ```bash
-# Install Power Platform CLI if not already installed
-npm install -g pac
-
-# Authenticate to your environment
 pac auth create --url https://YOUR_ORG.crm.dynamics.com
-
-# Import the solution
 pac solution import --path ./solution.zip
 ```
 
-### Option 3: Build from Source
+---
 
-If you want to modify the control and rebuild:
+## Step 2 — Add Presence Hub to the productivity pane
 
-```bash
-# Clone the repository
-git clone https://github.com/moliveirapinto/Presence-Hub.git
-cd Presence-Hub
+The productivity pane is the strip of small icons on the right side of the agent's screen (alongside Smart Assist, Knowledge, etc.). You need to tell it to show Presence Hub there.
 
-# Install dependencies
-npm install
+1. Open [make.powerapps.com](https://make.powerapps.com) and pick your environment.
+2. Open **Customer Service admin center** (it's one of the apps in your environment).
+3. In the left menu go to **Workspaces** → **Productivity pane**.
+4. Under **Pane tools**, click **+ Add tool** and fill it in:
 
-# Build the control
-npm run build
-
-# Build the solution zip (unmanaged)
-cd Solution
-dotnet build --configuration Release
-
-# Import to your environment
-pac solution import --path bin/Release/Solution.zip
-```
-
-## Configure as a Productivity Pane Tool
-
-After importing the solution, you need to configure Presence Hub as a **pane tool** in the productivity pane:
-
-1. Open [make.powerapps.com](https://make.powerapps.com) and navigate to your environment
-2. Go to **Apps** → open **Customer Service admin center**
-3. Navigate to **Workspaces** → **Productivity pane**
-4. Under **Pane tools**, click **+ Add tool**
-5. Configure the pane tool:
-
-   | Field | Value |
+   | Field | What to type |
    |---|---|
    | **Name** | `Presence Hub` |
    | **Unique Name** | `mau_presencehub` |
-   | **Control name** | `mau_MauLabs.PresenceHub` |
-   | **Icon (Web resource)** | Choose an existing icon web resource or upload a new SVG/PNG (e.g., a clock-alarm icon). The icon appears in the productivity pane sidebar. |
+   | **Control name** | `mau_MauLabs.PresenceHub` *(pick this from the dropdown)* |
+   | **Icon** | Pick any icon you like — a clock or person icon works well. This is what your agents will click. |
 
-6. Save and enable the tool
-7. Add it to your **Pane tab configuration** linked to your productivity pane config
-8. **Publish** all customizations
+5. Click **Save**, then make sure the tool is **enabled**.
+6. Add the tool to the **Pane tab configuration** that your agents already use.
+7. Click **Publish** at the top.
 
-The control will appear as a new icon in the productivity pane sidebar of the Customer Service workspace.
+A new icon now appears in the right-hand pane of the Customer Service workspace.
 
-## Enabling for Users
+---
 
-After installation, agents need to be **assigned to the correct experience profile** to see the Presence Hub in their productivity pane.
+## Step 3 — Turn it on for your agents
 
-### Option A: Assign via Agent Experience Profile
+In Dynamics 365, what an agent sees in the productivity pane is controlled by their **Agent experience profile**. You have three choices for who gets Presence Hub:
 
-1. Go to **Customer Service admin center** → **Agent experience** → **Workspaces** → **Agent experience profiles**.
-2. Open the profile that has the Presence Hub pane tool (e.g., **Contact center agent experience profile**).
-3. Under the **Users** section, click **Add users** and search for the agents you want to enable.
-4. Save the profile. Those agents will see the Presence Hub icon next time they open the workspace.
+### Option A — Give it to specific agents
 
-### Option B: Assign via Workstream (for Omnichannel agents)
+1. **Customer Service admin center** → **Agent experience** → **Workspaces** → **Agent experience profiles**.
+2. Open the profile that has the Presence Hub pane tool (for example, *Contact center agent experience profile*).
+3. Scroll to the **Users** section and click **Add users**.
+4. Pick the agents who should see Presence Hub and **Save**.
 
-1. Go to **Customer Service admin center** → **Customer support** → **Workstreams**.
-2. Open the workstream (e.g., **Chat workstream**, **Voice workstream**, etc.).
-3. Under **Advanced settings**, find the **Agent experience profile** field.
-4. Set it to the profile that contains the Presence Hub tool.
-5. Save the workstream. All agents routed through this workstream will get the configured productivity pane.
+They'll see the new icon the next time they refresh their browser.
 
-### Option C: Default profile (all agents)
+### Option B — Give it to everyone on a workstream
+
+Use this if you want everyone handling a particular channel (chat, voice, etc.) to get Presence Hub automatically.
+
+1. **Customer Service admin center** → **Customer support** → **Workstreams**.
+2. Open the workstream (e.g., **Voice workstream**).
+3. Under **Advanced settings**, set **Agent experience profile** to the profile that includes Presence Hub.
+4. **Save**.
+
+### Option C — Give it to everyone
 
 1. In **Agent experience profiles**, open the profile marked as **Default**.
-2. Add the Presence Hub pane tool to its productivity pane (same steps as [Configure as a Productivity Pane Tool](#configure-as-a-productivity-pane-tool)).
-3. All agents without a specific profile assignment will inherit this default.
+2. Add Presence Hub to its productivity pane (same steps as [Step 2](#step-2--add-presence-hub-to-the-productivity-pane)).
 
-> **Note:** Changes to experience profiles take effect on the agent's next page load — no restart needed, just a browser refresh.
+Every agent who doesn't already have a specific profile will now see it.
 
-## Project Structure
+> 💡 **No restart needed.** Agents just refresh their browser to see the change.
+
+---
+
+## Frequently asked questions
+
+**My agent doesn't see the icon.**
+Make sure their Agent experience profile includes Presence Hub (see Step 3), then ask them to refresh the browser.
+
+**The Presence History tab shows "No status".**
+The agent needs to be signed in to Omnichannel and have a presence set. Once they're online, the panel updates within a few seconds.
+
+**The Queue Hub tab is empty.**
+The agent isn't a member of any queue yet. Add them to a queue in the Customer Service admin center, and the list will populate on refresh.
+
+**Does the timer keep counting if the agent refreshes or closes the browser?**
+Yes. The time shown is based on when they actually changed status — not when the panel loaded — so it's always accurate.
+
+**Can a supervisor see other agents' history?**
+The Presence History tab shows the **signed-in agent's** own history. To check a teammate's history, use the Queue Hub tab to see their current status, or use the standard Omnichannel reports in Dynamics.
+
+**Is any data sent outside my Dynamics environment?**
+No. Presence Hub only reads data that already exists in your Dataverse (Dynamics 365) environment. Nothing is sent to a third-party service.
+
+---
+
+## For developers
+
+Want to modify Presence Hub or build it yourself? See the technical details below.
+
+### Build from source
+
+```bash
+git clone https://github.com/moliveirapinto/Presence-Hub.git
+cd Presence-Hub
+npm install
+npm run build
+```
+
+### Project structure
 
 ```
 Presence-Hub/
-├── README.md
+├── PresenceHub/
+│   ├── ControlManifest.Input.xml   # PCF manifest
+│   ├── index.ts                    # Both tabs, all logic
+│   └── css/PresenceHub.css         # Styles
 ├── package.json
 ├── tsconfig.json
 ├── pcfconfig.json
-├── Presence-Hub.pcfproj
-└── PresenceHub/
-    ├── ControlManifest.Input.xml          # PCF control manifest
-    ├── index.ts                           # Main control logic (both tabs)
-    └── css/
-        └── PresenceHub.css                # Control styles
+└── Presence-Hub.pcfproj
 ```
 
-## Data Model
+### Dataverse tables used
 
-The control queries the following Dataverse entities:
+| Tab | Tables read | Purpose |
+|---|---|---|
+| Presence History | `systemuser`, `msdyn_agentstatus`, `msdyn_agentstatushistory`, `msdyn_presence` | Current status, persistent timer, daily timeline |
+| Queue Hub | `queue`, `queuemembership`, `systemuser`, `msdyn_agentstatus`, `msdyn_presence` | Queue list, queue members, their live presence |
 
-### Presence History tab
+The control uses the **WebAPI** and **Utility** PCF features and is read-only — it never writes to Dataverse.
 
-```
-systemuser
-    ↓
-msdyn_agentstatus          (current presence ID + modified timestamp)
-    ↓
-msdyn_agentstatushistory   (presence changes with start/end times)
-    ↓
-msdyn_presence             (presence ID → friendly name mapping)
-```
+### Related projects
 
-- **Current status**: read from `msdyn_agentstatus` for the logged-in agent
-- **Timer start time**: read from the latest `msdyn_agentstatushistory` record matching the current presence, so it persists across page refreshes
-- **Timeline & chips**: queried from `msdyn_agentstatushistory` filtered by selected date (timezone-aware boundaries)
+Presence Hub combines two earlier standalone controls into a single two-tab experience:
 
-### Queue Hub tab
+- [Presence Timer](https://github.com/moliveirapinto/modern-sla-timer-pcf)
+- [Queue Hub](https://github.com/moliveirapinto/Queue-Hub)
 
-```
-queue ←→ queuemembership (N:N) ←→ systemuser
-                                        ↓
-                                  msdyn_agentstatus
-                                        ↓
-                                  msdyn_presence
-```
-
-- **Queues**: filtered to only show queues where the current user is a member
-- **Agents**: retrieved per queue via the `queuemembership` intersect entity
-- **Presence**: loaded from `msdyn_agentstatus` (batched in groups of 10) and resolved to friendly names via `msdyn_presence`
+---
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — free to use, modify, and share.
