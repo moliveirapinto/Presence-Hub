@@ -24,6 +24,7 @@ interface I18nStrings {
   agentsInSelected: string; noAgentsInSelected: string;
   you: string; presenceHistory: string; queueHub: string; pickDate: string;
   unknown: string; selected: string; queue_one: string; agent_one: string; refresh: string;
+  showAgents: string;
 }
 
 const EN: I18nStrings = {
@@ -36,6 +37,7 @@ const EN: I18nStrings = {
   agentsInSelected:"Agents in selected queues", noAgentsInSelected:"No agents in selected queues",
   you:"You", presenceHistory:"Presence History", queueHub:"Queue Hub", pickDate:"Pick a date",
   unknown:"Unknown", selected:"selected", queue_one:"queue", agent_one:"agent", refresh:"Refresh",
+  showAgents:"Show agents",
 };
 
 const TRANSLATIONS: Record<string, Partial<I18nStrings>> = {
@@ -110,8 +112,13 @@ function cntLbl(n: number, key: keyof I18nStrings): string {
 const POLL_PRESENCE_MS = 5000;
 const POLL_QUEUE_MS = 10000;
 
+/** Skip polling work when the tab is hidden (saves bandwidth + RU). */
+function isTabHidden(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
 const COLORS: Record<string, string> = {
-  available: "#92c353",
+  available: "#13a10e",
   busy: "#c4314b",
   "busy - dnd": "#c4314b",
   "do not disturb": "#c4314b",
@@ -303,6 +310,11 @@ class PresenceTimerPanel {
   private _calViewDate: Date = new Date();
   private _calOpen = false;
   private _onDocClick: ((e: MouseEvent) => void) | null = null;
+  private _filterStatus: string | null = null;
+  private _lastRecords: ComponentFramework.WebApi.Entity[] = [];
+  private _polling = false;          // reentrancy guard for _poll()
+  private _errStreak = 0;            // consecutive poll failures (for backoff)
+  private _bootstrapped = false;     // true once first successful presence read happened
 
   private _elDot!: HTMLDivElement;
   private _elName!: HTMLSpanElement;
@@ -310,6 +322,7 @@ class PresenceTimerPanel {
   private _elErr!: HTMLDivElement;
   private _elTL!: HTMLDivElement;
   private _elSum!: HTMLDivElement;
+  private _elBar!: HTMLDivElement;
   private _elDpLbl!: HTMLSpanElement;
   private _elPrev!: HTMLButtonElement;
   private _elNext!: HTMLButtonElement;
@@ -355,6 +368,7 @@ class PresenceTimerPanel {
         </div>
         <div class="cal-overlay" data-ref="calOverlay" style="display:none"></div>
       </div>
+      <div class="status-bar-wrap" data-ref="statusBar"></div>
       <div class="summary" data-ref="summary"></div>
       <div class="hist">
         <div class="hist-title-row"><span class="hist-title">${loc("timeline")}</span><button class="hist-refresh" data-ref="refreshBtn" title="${loc("refresh")}">↻</button></div>
@@ -367,6 +381,7 @@ class PresenceTimerPanel {
     this._elErr = this._ref("err") as HTMLDivElement;
     this._elTL = this._ref("timeline") as HTMLDivElement;
     this._elSum = this._ref("summary") as HTMLDivElement;
+    this._elBar = this._ref("statusBar") as HTMLDivElement;
     this._elDpLbl = this._ref("dpLabel") as HTMLSpanElement;
     this._elPrev = this._ref("prevDay") as HTMLButtonElement;
     this._elNext = this._ref("nextDay") as HTMLButtonElement;
@@ -399,18 +414,22 @@ class PresenceTimerPanel {
   }
 
   private async _initialize(): Promise<void> {
+    // Always wire timers up FIRST so a transient first-call failure can self-heal.
+    // (Previously, an exception here left the pill stuck on "Loading\u2026" forever.)
+    this._tickTimer = window.setInterval(() => this._tick(), 1000);
+    this._pollTimer = window.setInterval(() => this._poll(), POLL_PRESENCE_MS);
     try {
       const p = await this._getPresence();
       this._curId = p.id;
       this._start = p.since ? new Date(p.since).getTime() : Date.now();
+      this._bootstrapped = true;
       this._render(p);
       this._tick();
-      this._tickTimer = window.setInterval(() => this._tick(), 1000);
-      this._pollTimer = window.setInterval(() => this._poll(), POLL_PRESENCE_MS);
       this._loadDay();
     } catch (e: unknown) {
       this._elName.textContent = "\u2014";
       this._showErr(e instanceof Error ? e.message : String(e));
+      // _poll() will keep retrying — and on first success will trigger _loadDay().
     }
   }
 
@@ -494,23 +513,48 @@ class PresenceTimerPanel {
   }
 
   private async _poll(): Promise<void> {
+    // Skip while a previous poll is still in flight (slow WebAPI → no thundering herd).
+    if (this._polling) return;
+    // Skip while tab is hidden — resume immediately when it becomes visible again.
+    if (isTabHidden()) return;
+    // Exponential backoff after consecutive failures: skip up to 6 polls in a row
+    // when we've failed 3+ times. Resets on first success.
+    if (this._errStreak >= 3) {
+      const skip = Math.min(6, this._errStreak - 2);
+      if ((this._errStreak % (skip + 1)) !== 0) return;
+    }
+    this._polling = true;
     try {
       const p = await this._getPresence();
+      const wasBootstrapping = !this._bootstrapped;
       if (p.id !== this._curId) {
         this._curId = p.id;
         this._start = p.since ? new Date(p.since).getTime() : Date.now();
         if (isToday(this._selectedDate)) this._loadDay();
+      } else if (wasBootstrapping) {
+        // First successful read after initialization failed — sync start + load day.
+        this._start = p.since ? new Date(p.since).getTime() : Date.now();
+        this._loadDay();
       }
+      this._bootstrapped = true;
+      this._errStreak = 0;
       this._render(p);
+      // Self-heal: clear any stale error banner on successful read.
+      if (this._elErr.style.display !== "none") this._elErr.style.display = "none";
     } catch (e: unknown) {
+      this._errStreak++;
       this._showErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      this._polling = false;
     }
   }
 
   private _renderTimeline(records: ComponentFramework.WebApi.Entity[]): void {
+    this._lastRecords = records;
     if (!records.length) {
       this._elTL.innerHTML = `<div class="tl-empty">${loc("noActivity")}</div>`;
       this._elSum.innerHTML = "";
+      this._elBar.innerHTML = "";
       return;
     }
     const totals: Record<string, number> = {};
@@ -526,18 +570,92 @@ class PresenceTimerPanel {
     const sortedNames = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
     let sumHtml = "";
     for (const n of sortedNames) {
-      sumHtml += `<div class="sum-chip"><div class="sum-dot" style="background:${color(n)}">${statusIcon(n, "sm")}</div><span>${esc(n)}</span> <span class="sum-val">${fmtShort(totals[n])}</span></div>`;
+      const active = this._filterStatus === n;
+      sumHtml += `<div class="sum-chip${active ? " sum-chip--active" : ""}" data-status="${esc(n)}"><div class="sum-dot" style="background:${color(n)}">${statusIcon(n, "sm")}</div><span>${esc(n)}</span> <span class="sum-val">${fmtShort(totals[n])}</span></div>`;
     }
     this._elSum.innerHTML = sumHtml;
+    this._elSum.classList.toggle("has-filter", this._filterStatus !== null);
+
+    // ── Day status bar (chronological segments) ──
+    // Sort records chronologically (oldest first)
+    const chrono = [...records].sort(
+      (a, b) => new Date(a["msdyn_starttime"] as string).getTime() - new Date(b["msdyn_starttime"] as string).getTime()
+    );
+    const dayStart = new Date(chrono[0]["msdyn_starttime"] as string).getTime();
+    const lastRec = chrono[chrono.length - 1];
+    const dayEnd = lastRec["msdyn_endtime"]
+      ? new Date(lastRec["msdyn_endtime"] as string).getTime()
+      : Date.now();
+    const totalSpan = dayEnd - dayStart;
+    if (totalSpan > 0) {
+      let barHtml = '<div class="sbar">';
+      const segCount = chrono.length;
+      for (let i = 0; i < segCount; i++) {
+        const r = chrono[i];
+        const name = pName(r["_msdyn_presenceid_value"] as string, this._s.pmap);
+        const st = new Date(r["msdyn_starttime"] as string).getTime();
+        const en = r["msdyn_endtime"] ? new Date(r["msdyn_endtime"] as string).getTime() : Date.now();
+        const pct = Math.max(0.3, ((en - st) / totalSpan) * 100);
+        const dimmed = this._filterStatus && this._filterStatus !== name ? " sbar-seg--dim" : "";
+        const radius = segCount === 1
+          ? "border-radius:8px;"
+          : i === 0
+            ? "border-radius:8px 0 0 8px;"
+            : i === segCount - 1
+              ? "border-radius:0 8px 8px 0;"
+              : "";
+        barHtml += `<div class="sbar-seg${dimmed}" style="width:${pct}%;background:${color(name)};${radius}" data-status="${esc(name)}" title="${esc(name)} \u2014 ${fmtShort(en - st)}"></div>`;
+      }
+      barHtml += '</div>';
+      // Time labels
+      const startLbl = fmtTime(chrono[0]["msdyn_starttime"] as string);
+      const endLbl = lastRec["msdyn_endtime"] ? fmtTime(lastRec["msdyn_endtime"] as string) : fmtTime(new Date().toISOString());
+      barHtml += `<div class="sbar-labels"><span>${startLbl}</span><span>${endLbl}</span></div>`;
+      this._elBar.innerHTML = barHtml;
+    } else {
+      this._elBar.innerHTML = "";
+    }
+
+    // Wire up click-to-filter on status bar segments
+    this._elBar.querySelectorAll(".sbar-seg").forEach((seg) => {
+      seg.addEventListener("click", () => {
+        const status = (seg as HTMLElement).dataset.status || null;
+        this._filterStatus = this._filterStatus === status ? null : status;
+        this._renderTimeline(this._lastRecords);
+      });
+    });
+
+    // Wire up click-to-filter on summary pills
+    this._elSum.querySelectorAll(".sum-chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const status = (chip as HTMLElement).dataset.status || null;
+        this._filterStatus = this._filterStatus === status ? null : status;
+        this._renderTimeline(this._lastRecords);
+      });
+    });
+
+    // Filter timeline records if a status is selected
+    const filtered = this._filterStatus
+      ? records.filter(r => pName(r["_msdyn_presenceid_value"] as string, this._s.pmap) === this._filterStatus)
+      : records;
+
+    // Recalculate maxDur for filtered set
+    let filteredMaxDur = 0;
+    for (const r of filtered) {
+      const st = new Date(r["msdyn_starttime"] as string).getTime();
+      const en = r["msdyn_endtime"] ? new Date(r["msdyn_endtime"] as string).getTime() : Date.now();
+      const dur = en - st;
+      if (dur > filteredMaxDur) filteredMaxDur = dur;
+    }
 
     let html = '<div class="tl">';
-    for (const r of records) {
+    for (const r of filtered) {
       const name = pName(r["_msdyn_presenceid_value"] as string, this._s.pmap);
       const c = color(name);
       const st = new Date(r["msdyn_starttime"] as string).getTime();
       const en = r["msdyn_endtime"] ? new Date(r["msdyn_endtime"] as string).getTime() : Date.now();
       const dur = en - st;
-      const barPct = maxDur > 0 ? Math.max(4, Math.round((dur / maxDur) * 100)) : 100;
+      const barPct = filteredMaxDur > 0 ? Math.max(4, Math.round((dur / filteredMaxDur) * 100)) : 100;
       html += `<div class="tl-item"><div class="tl-dot" style="background:${c}">${statusIcon(name, "lg")}</div><div class="tl-body"><div class="tl-row"><span class="tl-name">${esc(name)}</span><span class="tl-dur">${fmtShort(dur)}</span></div><div class="tl-time">${fmtTimeRange(r["msdyn_starttime"] as string, (r["msdyn_endtime"] as string) || null)}</div><div class="tl-bar" style="width:${barPct}%;background:${c}"></div></div></div>`;
     }
     html += "</div>";
@@ -558,6 +676,7 @@ class PresenceTimerPanel {
 
   private async _loadDay(): Promise<void> {
     this._updateDateLabel();
+    this._filterStatus = null;
     this._elTL.innerHTML = `<div class="hist-loading">${loc("loading")}</div>`;
     this._elSum.innerHTML = "";
     try {
@@ -661,11 +780,14 @@ class QueueHubPanel {
   // Queues subtab state
   private _selectedQueueIds = new Set<string>();
   private _queueAgents: AgentInfo[] = [];
+  private _queueAgentsCacheKey = "";
   private _queuesCollapsed = false;
 
   // Agents subtab state
   private _allAgents: AgentWithQueues[] = [];
   private _expandedAgentIds = new Set<string>();
+  private _agentFilterStatus: string | null = null;
+  private _agentHistoryCache: Record<string, ComponentFramework.WebApi.Entity[]> = {};
 
   private _elSearch!: HTMLInputElement;
   private _elSubtitle!: HTMLDivElement;
@@ -811,9 +933,13 @@ class QueueHubPanel {
 
   private async _loadAgentsForSelectedQueues(): Promise<AgentInfo[]> {
     const agentMap: Record<string, AgentInfo> = {};
-    for (const qid of this._selectedQueueIds) {
-      const agents = await this._loadAgentsInQueue(qid);
-      for (const a of agents) {
+    // Parallelize per-queue fetches (was sequential).
+    const results = await Promise.allSettled(
+      [...this._selectedQueueIds].map(qid => this._loadAgentsInQueue(qid))
+    );
+    for (const r of results) {
+      if (r.status !== "fulfilled") continue;
+      for (const a of r.value) {
         if (!agentMap[a.id]) {
           agentMap[a.id] = { ...a };
         } else if (a.presenceId) {
@@ -831,8 +957,14 @@ class QueueHubPanel {
 
   private async _loadAllAgentsWithQueues(): Promise<AgentWithQueues[]> {
     const agentMap: Record<string, AgentWithQueues> = {};
-    for (const q of this._queues) {
-      const agents = await this._loadAgentsInQueue(q.id);
+    // Fetch all queues in parallel (was sequential — N round-trips per poll cycle).
+    // Use allSettled so one bad queue can't break the whole tab.
+    const results = await Promise.allSettled(
+      this._queues.map(q => this._loadAgentsInQueue(q.id).then(agents => ({ q, agents })))
+    );
+    for (const r of results) {
+      if (r.status !== "fulfilled") continue;
+      const { q, agents } = r.value;
       for (const a of agents) {
         if (!agentMap[a.id]) {
           agentMap[a.id] = { ...a, queues: [] };
@@ -854,6 +986,7 @@ class QueueHubPanel {
     if (this._pollTimer !== null) { clearInterval(this._pollTimer); this._pollTimer = null; }
     this._activeTab = tab;
     this._elSearch.value = "";
+    this._agentFilterStatus = null;
     this._elSummary.style.display = "none";
     this._elSummary.innerHTML = "";
 
@@ -907,17 +1040,20 @@ class QueueHubPanel {
           <input type="checkbox" class="qh-checkbox" data-qid="${esc(q.id)}" ${checked ? "checked" : ""} />
           <span class="qh-checkbox-custom"></span>
         </label>
-        <div class="qh-item-icon">${esc(getInitials(q.name))}</div>
         <div class="qh-item-body">
           <div class="qh-item-name">${esc(q.name)}</div>
         </div>
       </div>`;
     }
+    // CTA button inside the queue list when there's a selection and list is expanded
+    if (selCount > 0 && !collapsed) {
+      html += `<button class="qh-show-agents-cta" data-ref="show-agents-cta"><svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM3 18a7 7 0 0 1 14 0 .5.5 0 0 1-1 0 6 6 0 0 0-12 0 .5.5 0 0 1-1 0Z"/></svg> ${loc("showAgents")} (${selCount}) <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path d="M15.85 7.65a.5.5 0 0 0-.7 0L10 12.79 4.85 7.65a.5.5 0 0 0-.7.7l5.5 5.5a.5.5 0 0 0 .7 0l5.5-5.5a.5.5 0 0 0 0-.7Z"/></svg></button>`;
+    }
     html += `</div>`;
 
-    if (selCount > 0) {
+    if (selCount > 0 && collapsed) {
       html += `<div class="qh-results-divider"><span>${loc("agentsInSelected")}</span></div>`;
-      if (!collapsed) html += `<div class="qh-selected-queues">${selQueues.map(q => `<span class="qh-sel-tag">${esc(q.name)}<span class="qh-sel-tag-x" data-qid="${esc(q.id)}">&times;</span></span>`).join("")}</div>`;
+      html += `<div class="qh-selected-queues">${selQueues.map(q => `<span class="qh-sel-tag">${esc(q.name)}<span class="qh-sel-tag-x" data-qid="${esc(q.id)}">&times;</span></span>`).join("")}</div>`;
       html += `<div data-ref="queue-agents">${LOADING_HTML}</div>`;
     }
 
@@ -929,7 +1065,17 @@ class QueueHubPanel {
       colToggle.addEventListener("click", () => {
         this._queuesCollapsed = !this._queuesCollapsed;
         this._renderQueuesTab(this._elSearch.value.trim() || undefined);
-        if (this._selectedQueueIds.size > 0) this._loadAndRenderQueueAgents();
+        if (this._selectedQueueIds.size > 0 && this._queuesCollapsed) this._loadAndRenderQueueAgents();
+      });
+    }
+
+    // Bind "Show agents" CTA button
+    const ctaBtn = this._c.querySelector('[data-ref="show-agents-cta"]');
+    if (ctaBtn) {
+      ctaBtn.addEventListener("click", () => {
+        this._queuesCollapsed = true;
+        this._renderQueuesTab(this._elSearch.value.trim() || undefined);
+        this._loadAndRenderQueueAgents();
       });
     }
 
@@ -942,11 +1088,9 @@ class QueueHubPanel {
           this._selectedQueueIds.add(qid);
         } else {
           this._selectedQueueIds.delete(qid);
+          if (this._selectedQueueIds.size === 0) this._queuesCollapsed = false;
         }
         this._renderQueuesTab(this._elSearch.value.trim() || undefined);
-        if (this._selectedQueueIds.size > 0) {
-          this._loadAndRenderQueueAgents();
-        }
       });
     });
 
@@ -966,22 +1110,35 @@ class QueueHubPanel {
         ev.stopPropagation();
         const qid = (btn as HTMLElement).dataset.qid!;
         this._selectedQueueIds.delete(qid);
+        if (this._selectedQueueIds.size === 0) this._queuesCollapsed = false;
         this._renderQueuesTab(this._elSearch.value.trim() || undefined);
         if (this._selectedQueueIds.size > 0) this._loadAndRenderQueueAgents();
       });
     });
 
-    if (selCount > 0) {
+    if (selCount > 0 && collapsed) {
       this._loadAndRenderQueueAgents();
     }
   }
 
-  private async _loadAndRenderQueueAgents(): Promise<void> {
+  private _queueSelectionKey(): string {
+    return [...this._selectedQueueIds].sort().join(",");
+  }
+
+  private async _loadAndRenderQueueAgents(forceRefresh = false): Promise<void> {
     const target = this._c.querySelector('[data-ref="queue-agents"]') as HTMLDivElement;
     if (!target) return;
 
+    const key = this._queueSelectionKey();
+    // If selection didn't change and we have cached data, just re-render
+    if (!forceRefresh && key === this._queueAgentsCacheKey && this._queueAgents.length > 0) {
+      this._renderQueueAgentsSection(target);
+      return;
+    }
+
     try {
       this._queueAgents = await this._loadAgentsForSelectedQueues();
+      this._queueAgentsCacheKey = key;
       this._renderQueueAgentsSection(target);
       if (this._pollTimer !== null) clearInterval(this._pollTimer);
       this._pollTimer = window.setInterval(() => this._pollQueueAgents(), POLL_QUEUE_MS);
@@ -1016,14 +1173,20 @@ class QueueHubPanel {
     target.innerHTML = html;
   }
 
+  private _pollingQueueAgents = false;
   private async _pollQueueAgents(): Promise<void> {
     if (this._activeTab !== "queues" || this._selectedQueueIds.size === 0) return;
+    if (this._pollingQueueAgents || isTabHidden()) return;
+    this._pollingQueueAgents = true;
     try {
       this._queueAgents = await this._loadAgentsForSelectedQueues();
+      this._queueAgentsCacheKey = this._queueSelectionKey();
       const target = this._c.querySelector('[data-ref="queue-agents"]') as HTMLDivElement;
       if (target) this._renderQueueAgentsSection(target);
     } catch {
       // silently retry
+    } finally {
+      this._pollingQueueAgents = false;
     }
   }
 
@@ -1047,6 +1210,9 @@ class QueueHubPanel {
       const lf = filter.toLowerCase();
       agents = agents.filter(a => a.name.toLowerCase().indexOf(lf) > -1);
     }
+    if (this._agentFilterStatus) {
+      agents = agents.filter(a => a.presenceName === this._agentFilterStatus);
+    }
 
     if (!agents.length) {
       this._elList.innerHTML = `<div class="qh-empty">${filter ? loc("noAgentsMatch") : loc("noAgentsFound")}</div>`;
@@ -1064,9 +1230,10 @@ class QueueHubPanel {
       totals[a.presenceName] = (totals[a.presenceName] || 0) + 1;
     }
     const sortedStatuses = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
-    let sumHtml = `<div class="qh-summary" style="display:${sortedStatuses.length ? "flex" : "none"}">`;
+    let sumHtml = `<div class="qh-summary${this._agentFilterStatus ? " qh-has-filter" : ""}" style="display:${sortedStatuses.length ? "flex" : "none"}">`;
     for (const n of sortedStatuses) {
-      sumHtml += `<div class="qh-chip"><div class="qh-chip-dot" style="background:${color(n)}">${statusIcon(n, "sm")}</div><span class="qh-chip-count">${totals[n]}</span><span>${esc(n)}</span></div>`;
+      const active = this._agentFilterStatus === n;
+      sumHtml += `<div class="qh-chip qh-chip--clickable${active ? " qh-chip--active" : ""}" data-status="${esc(n)}"><div class="qh-chip-dot" style="background:${color(n)}">${statusIcon(n, "sm")}</div><span class="qh-chip-count">${totals[n]}</span><span>${esc(n)}</span></div>`;
     }
     sumHtml += `</div>`;
 
@@ -1097,7 +1264,6 @@ class QueueHubPanel {
         </div>
         <div class="qh-agent-queues" style="display:${expanded ? "block" : "none"}">
           ${a.queues.map(q => `<div class="qh-agent-queue-item">
-            <div class="qh-item-icon qh-item-icon--sm">${esc(getInitials(q.name))}</div>
             <span>${esc(q.name)}</span>
           </div>`).join("")}
         </div>
@@ -1123,22 +1289,125 @@ class QueueHubPanel {
           queuesDiv.style.display = "block";
           wrapper.classList.add("qh-agent-expandable--open");
           arrow.classList.add("qh-expand-arrow--open");
+          // Load and render history bar
+          void this._fetchAgentHistory(aid).then(records => {
+            this._renderAgentBar(records, queuesDiv);
+            return undefined;
+          }).catch(() => { /* silently skip */ });
         }
       });
+    });
+
+    // Bind chip click-to-filter
+    this._elList.querySelectorAll(".qh-chip--clickable").forEach(chip => {
+      chip.addEventListener("click", () => {
+        const status = (chip as HTMLElement).dataset.status || null;
+        this._agentFilterStatus = this._agentFilterStatus === status ? null : status;
+        this._renderAgentsTab(this._elSearch.value.trim() || undefined);
+      });
+    });
+
+    // Render history bars for already-expanded agents
+    this._elList.querySelectorAll(".qh-agent-expandable--open").forEach(wrapper => {
+      const aid = (wrapper as HTMLElement).dataset.aid!;
+      const queuesDiv = wrapper.querySelector(".qh-agent-queues") as HTMLElement;
+      void this._fetchAgentHistory(aid).then(records => {
+        this._renderAgentBar(records, queuesDiv);
+        return undefined;
+      }).catch(() => { /* silently skip */ });
     });
 
     if (this._pollTimer !== null) clearInterval(this._pollTimer);
     this._pollTimer = window.setInterval(() => this._pollAgentsTab(), POLL_QUEUE_MS);
   }
 
+  private _pollingAgentsTab = false;
   private async _pollAgentsTab(): Promise<void> {
     if (this._activeTab !== "agents") return;
+    if (this._pollingAgentsTab || isTabHidden()) return;
+    this._pollingAgentsTab = true;
     try {
       this._allAgents = await this._loadAllAgentsWithQueues();
+      this._agentHistoryCache = {};
       this._renderAgentsTab(this._elSearch.value.trim() || undefined);
     } catch {
       // silently retry
+    } finally {
+      this._pollingAgentsTab = false;
     }
+  }
+
+  /* ── Agent history bar helpers ── */
+
+  private async _fetchAgentHistory(agentId: string): Promise<ComponentFramework.WebApi.Entity[]> {
+    const cached = this._agentHistoryCache[agentId];
+    if (cached) return cached;
+    const tz = PresenceTimerPanel._tzOffsetStr();
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, "0");
+    const d = String(today.getDate()).padStart(2, "0");
+    const dayStart = `${y}-${m}-${d}T00:00:00${tz}`;
+    const next = new Date(y, today.getMonth(), today.getDate() + 1);
+    const ny = next.getFullYear();
+    const nm = String(next.getMonth() + 1).padStart(2, "0");
+    const nd = String(next.getDate()).padStart(2, "0");
+    const dayEnd = `${ny}-${nm}-${nd}T00:00:00${tz}`;
+    const filter =
+      `_msdyn_agentid_value eq ${agentId}` +
+      ` and msdyn_starttime ge ${dayStart}` +
+      ` and msdyn_starttime lt ${dayEnd}`;
+    const q =
+      `?$filter=${filter}` +
+      `&$select=msdyn_starttime,msdyn_endtime,_msdyn_presenceid_value` +
+      `&$orderby=msdyn_starttime asc`;
+    const resp = await this._s.api.retrieveMultipleRecords("msdyn_agentstatushistory", q, 5000);
+    const records = resp.entities || [];
+    this._agentHistoryCache[agentId] = records;
+    return records;
+  }
+
+  private _renderAgentBar(records: ComponentFramework.WebApi.Entity[], container: HTMLElement): void {
+    // Remove any existing bar
+    const existing = container.querySelector(".qh-agent-bar-wrap");
+    if (existing) existing.remove();
+
+    if (!records.length) return;
+
+    const chrono = [...records].sort(
+      (a, b) => new Date(a["msdyn_starttime"] as string).getTime() - new Date(b["msdyn_starttime"] as string).getTime()
+    );
+    const barStart = new Date(chrono[0]["msdyn_starttime"] as string).getTime();
+    const lastRec = chrono[chrono.length - 1];
+    const barEnd = lastRec["msdyn_endtime"]
+      ? new Date(lastRec["msdyn_endtime"] as string).getTime()
+      : Date.now();
+    const totalSpan = barEnd - barStart;
+    if (totalSpan <= 0) return;
+
+    let barHtml = '<div class="qh-agent-bar-wrap"><div class="sbar">';
+    const segCount = chrono.length;
+    for (let i = 0; i < segCount; i++) {
+      const r = chrono[i];
+      const name = pName(r["_msdyn_presenceid_value"] as string, this._s.pmap);
+      const st = new Date(r["msdyn_starttime"] as string).getTime();
+      const en = r["msdyn_endtime"] ? new Date(r["msdyn_endtime"] as string).getTime() : Date.now();
+      const pct = Math.max(0.3, ((en - st) / totalSpan) * 100);
+      const radius = segCount === 1
+        ? "border-radius:8px;"
+        : i === 0
+          ? "border-radius:8px 0 0 8px;"
+          : i === segCount - 1
+            ? "border-radius:0 8px 8px 0;"
+            : "";
+      barHtml += `<div class="sbar-seg" style="width:${pct}%;background:${color(name)};${radius}" title="${esc(name)} \u2014 ${fmtShort(en - st)}"></div>`;
+    }
+    barHtml += '</div>';
+    const startLbl = fmtTime(chrono[0]["msdyn_starttime"] as string);
+    const endLbl = lastRec["msdyn_endtime"] ? fmtTime(lastRec["msdyn_endtime"] as string) : fmtTime(new Date().toISOString());
+    barHtml += `<div class="sbar-labels"><span>${startLbl}</span><span>${endLbl}</span></div></div>`;
+
+    container.insertAdjacentHTML("afterbegin", barHtml);
   }
 
   /* ── Shared agent card HTML ── */
