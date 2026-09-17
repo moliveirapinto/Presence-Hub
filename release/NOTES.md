@@ -1,21 +1,77 @@
-## PresenceHub v2.8.3
+## PresenceHub v2.9.0
 
-### Critical bug fixes
-- **Pill no longer freezes on "Loading..."** when the OmniChannel agent-status row is missing or its `_msdyn_currentpresenceid_value` is null. We now render `Offline` in those cases instead of throwing.
-- **Fixed broken poll backoff** (`_errStreak % (skip+1) !== 0`) that permanently locked polling after 3 consecutive failures because `_errStreak` only changed on real attempts, so the modulo never reset. Replaced with an independent `_skipCount` tick counter.
-- **Restored compile-time correctness**: the v2.8.2 source had a stale `PresenceTimerPanel._tzOffsetStr()` call in `_fetchAgentHistory` after the `_toUtcLiteral` refactor - meaning v2.8.2's bundle could not actually be rebuilt cleanly from source. Replaced with a UTC literal helper so the queue-tab agent history is now also immune to the OData `+` URL-decode bug in positive-offset timezones.
-- **Defensive `_render`**: re-queries the DOM if the cached `data-ref="sName"` node was detached, and falls back to `"Unknown"` if `p.name` is empty.
-- **Visible version stamp** ("PresenceHub v2.8.3") in the bottom-right of the presence panel - lets you confirm at a glance whether the browser is running the latest bundle vs a cached one.
-- **Console diagnostics** when the agent-status query returns no row or a null presence id (look for `[PresenceHub]` warnings in DevTools console).
+Fixes the two issues reported from the field: custom presence statuses rendering grey, and the
+"time in status" timer showing an alarming multi-day number after a weekend.
+
+### Custom / localized presence statuses are no longer grey
+
+Colours and icons used to be derived purely from English keyword matching on the presence text
+(`available`, `busy`, `away`, `offline`, ...). Any status an admin created - `Break`, `Lunch`,
+`Training`, `Coaching`, `Wrap-up` - matched nothing and fell through to the grey default, which is
+exactly the reported symptom: **everything grey except Available**. Orgs running a non-English UI
+language hit the same problem for the out-of-the-box statuses.
+
+Presence Hub now reads **`msdyn_basepresencestatus`** (the *Base status* field on each presence
+record) and colours from it: Available -> green, Busy -> red, Busy - DND -> red, Away -> yellow,
+Offline -> grey. Keyword matching is kept only as a fallback for orgs where that column can't be
+read, and *After conversation work* still keeps its distinct pink.
+
+Two related colouring bugs are fixed at the same time:
+- `Busy - After Conversation Work` was matching the shorter `busy` key first and rendering red
+  instead of pink, because the lookup iterated keys in declaration order.
+- Status sorting in Queue Hub now uses the same resolver, so custom statuses sort into the right
+  group instead of always landing in "other".
+
+> If a custom status still shows grey after upgrading, open it in the Customer Service admin center
+> and make sure its **Base status** is set.
+
+### Time in status
+
+- **Timer no longer counts a stale, already-closed segment.** `_getPresence` picked the newest
+  history row for the current presence *regardless of whether it had already ended*, so a closed
+  segment could anchor the timer days in the past. It now takes the still-open segment
+  (`msdyn_endtime eq null`) and falls back to `msdyn_presencemodifiedon`.
+- **Timer no longer freezes on a rapid A -> B -> A change.** Polling only resynced when the presence
+  *id* changed, so switching away and back between two 5-second polls left the clock running from
+  the old start. It now also resyncs when the segment start time changes.
+- **Durations past 24h are readable.** `138:22:33` now renders as `5d 18:22:33`, and Queue Hub's
+  `138h 22m` renders as `5d 18h`.
+- **The status start time is shown under the timer**, so a large value is self-explanatory rather
+  than looking like a bug.
+
+### "No activity on this day" while the pill showed hours in that status
+
+The timeline query matched only segments that **started** inside the selected day. A status held
+across midnight - the common "signed out Friday, back Monday" case - was excluded entirely, so the
+day looked empty while the pill reported many hours in that same status. Both the Presence History
+timeline and the Queue Hub agent bars now match segments that **overlap** the day and clamp them to
+the day's boundaries, so totals are day-local and correct.
+
+### Refresh behaviour
+
+- Presence polls every **5s**, Queue Hub every **10s** (unchanged), but polling now **resumes
+  immediately when the browser tab regains focus** instead of waiting for the next interval -
+  background tabs are heavily throttled by browsers, so this was the main source of stale data for
+  agents returning after a break.
+- The **"Today" view now rolls over at midnight** for panels left open overnight; previously it kept
+  showing the previous day labelled "Today".
+- The "Today" timeline auto-refreshes every 5 minutes so the in-progress segment keeps growing.
+
+### Other
+
+- `getInitials` no longer throws on a whitespace-only display name.
+- The version stamp is driven by a single constant instead of being duplicated in the markup.
 
 ### Assets
-- `PresenceHub_2_8_3.zip` - unmanaged solution
-- `PresenceHub_2_8_3_managed.zip` - managed solution
+- `PresenceHub_2_9_0_managed.zip` - managed solution (recommended)
+- `PresenceHub_2_9_0.zip` - unmanaged solution
 
 ### Install
-If you already have v2.8.2 (broken) installed, this version is an in-place upgrade - no need to uninstall first:
+In-place upgrade from any 2.x - no need to uninstall first:
 ```pwsh
-pac solution import --path PresenceHub_2_8_3_managed.zip --publish-changes
+pac solution import --path PresenceHub_2_9_0_managed.zip --publish-changes
 ```
+Or import the .zip from **Power Apps -> Solutions -> Import solution**.
 
-After install, hard-reload the browser (Ctrl+F5) to bypass any cached copy of the v2.8.2 bundle. Confirm the "v2.8.3" stamp is visible at the bottom of the presence panel.
+After install, have agents hard-reload the browser (Ctrl+F5) to drop the cached bundle, and confirm
+the **v2.9.0** stamp at the bottom of the Presence History panel.

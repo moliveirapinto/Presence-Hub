@@ -159,6 +159,13 @@
   margin-top: 2px;
 }
 
+.presence-timer .since {
+  font-size: 11px;
+  color: #9a9a9a;
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
 .presence-timer .err {
   color: #c4314b;
   font-size: 12px;

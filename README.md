@@ -136,6 +136,15 @@ The agent isn't a member of any queue yet. Add them to a queue in the Customer S
 **Does the timer keep counting if the agent refreshes or closes the browser?**
 Yes. The time shown is based on when they actually changed status — not when the panel loaded — so it's always accurate.
 
+**How often does Presence Hub refresh?**
+The Presence History tab checks the agent's current status every **5 seconds**, and the Queue Hub tab refreshes every **10 seconds**. To save bandwidth, polling pauses while the browser tab is in the background and resumes instantly when the agent comes back to it. The "Today" timeline also rolls over automatically at midnight.
+
+**The timer shows a very large number, like "5d 18:22:33".**
+That's the real elapsed time in the current status. If an agent signed out on Friday and comes back on Monday, Omnichannel still has them as **Offline** since Friday, so the timer counts the whole weekend. The start time is shown underneath the timer so you can confirm it. As soon as they set themselves to Available, the timer restarts from zero.
+
+**A custom presence status shows the wrong colour.**
+Presence Hub colours each status from the **Base status** configured on the presence record in the Customer Service admin center (Available, Busy, Busy - DND, Away, Offline). If a custom status looks grey, open it and make sure its Base status is set.
+
 **Can a supervisor see other agents' history?**
 The Presence History tab shows the **signed-in agent's** own history. To check a teammate's history, use the Queue Hub tab to see their current status, or use the standard Omnichannel reports in Dynamics.
 

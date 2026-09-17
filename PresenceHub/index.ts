@@ -109,61 +109,106 @@ function cntLbl(n: number, key: keyof I18nStrings): string {
    Shared constants & utilities
    ═══════════════════════════════════════════════════════════════ */
 
+const VERSION = "2.9.0";
 const POLL_PRESENCE_MS = 5000;
 const POLL_QUEUE_MS = 10000;
+/** 1s ticks between automatic refreshes of the "Today" timeline (5 minutes). */
+const DAY_REFRESH_TICKS = 300;
 
 /** Skip polling work when the tab is hidden (saves bandwidth + RU). */
 function isTabHidden(): boolean {
   return typeof document !== "undefined" && document.visibilityState === "hidden";
 }
 
-const COLORS: Record<string, string> = {
+/** msdyn_presence.msdyn_basepresencestatus option-set values. */
+const BASE_AVAILABLE = 192360000;
+const BASE_BUSY = 192360001;
+const BASE_DND = 192360002;
+const BASE_AWAY = 192360003;
+const BASE_OFFLINE = 192360004;
+
+type StatusKind = "available" | "busy" | "acw" | "dnd" | "away" | "offline" | "unknown";
+
+const KIND_COLOR: Record<StatusKind, string> = {
   available: "#13a10e",
   busy: "#c4314b",
-  "busy - dnd": "#c4314b",
-  "do not disturb": "#c4314b",
+  acw: "#e3008c",
+  dnd: "#c4314b",
   away: "#fcd116",
-  "appear away": "#fcd116",
   offline: "#8c8c8c",
-  inactive: "#8c8c8c",
-  "busy - after conversation work": "#e3008c",
-  "after conversation work": "#e3008c",
-  "dnd-initiating outbound call": "#c4314b",
-  "voice consult dnd": "#c4314b",
-  "do not disturb - after conversation work": "#e3008c",
+  unknown: "#8c8c8c",
 };
 
+const BASE_KIND: Record<number, StatusKind> = {
+  [BASE_AVAILABLE]: "available",
+  [BASE_BUSY]: "busy",
+  [BASE_DND]: "dnd",
+  [BASE_AWAY]: "away",
+  [BASE_OFFLINE]: "offline",
+};
+
+/**
+ * Lowercased presence text/name -> msdyn_basepresencestatus, populated by loadPresenceMap().
+ * Custom presences ("Break", "Lunch", "Training"...) and localized OOB presences carry no
+ * recognizable English keyword, so the admin-configured base status is the only reliable
+ * way to colour them. Without this they all fell back to grey.
+ */
+const BASE_BY_TEXT: Record<string, number> = {};
+
+function kindFromText(l: string): StatusKind | null {
+  if (!l) return null;
+  if (l.indexOf("do not disturb") > -1 || l.indexOf("dnd") > -1) return "dnd";
+  if (l.indexOf("available") > -1) return "available";
+  if (l.indexOf("away") > -1) return "away";
+  if (l.indexOf("offline") > -1 || l.indexOf("inactive") > -1 || l.indexOf("signed out") > -1) return "offline";
+  if (l.indexOf("busy") > -1 || l.indexOf("on a call") > -1 || l.indexOf("reserved") > -1) return "busy";
+  return null;
+}
+
+/**
+ * Resolve a presence display text to a rendering kind. After-conversation-work is matched
+ * first because it is a refinement of Busy that the base status cannot express; the
+ * admin-configured base status wins next; English keyword matching is the last resort for
+ * orgs where msdyn_basepresencestatus could not be read.
+ */
+function statusKind(name: string): StatusKind {
+  const l = (name || "").trim().toLowerCase();
+  if (!l) return "unknown";
+  if (l.indexOf("after conversation work") > -1 || l.indexOf("acw") > -1) return "acw";
+  const base = BASE_BY_TEXT[l];
+  if (base !== undefined && BASE_KIND[base]) return BASE_KIND[base];
+  return kindFromText(l) ?? "unknown";
+}
+
 function color(name: string): string {
-  const l = (name || "").toLowerCase();
-  for (const k of Object.keys(COLORS)) {
-    if (l.indexOf(k) > -1) return COLORS[k];
-  }
-  return "#8c8c8c";
+  return KIND_COLOR[statusKind(name)];
 }
 
 /** Return inner-HTML icon for a presence status — matches D365 system icons. */
 function statusIcon(name: string, sz: "lg" | "sm" = "lg"): string {
-  const l = (name || "").toLowerCase();
-  // DND / Do Not Disturb → white minus bar
-  if (l.indexOf("do not disturb") > -1 || l.indexOf("dnd") > -1)
-    return sz === "lg" ? '<span class="dot-minus"></span>' : '<span class="dot-minus-sm"></span>';
-  // Available → white checkmark
-  if (l.indexOf("available") > -1)
-    return sz === "lg"
-      ? '<svg class="dot-icon" viewBox="0 0 12 12"><polyline points="2.5,6.5 5,9 9.5,3.5" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-      : '<svg class="dot-icon-sm" viewBox="0 0 12 12"><polyline points="3,6.5 5,8.5 9,3.5" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  // Away / Appear Away → white clock
-  if (l.indexOf("away") > -1)
-    return sz === "lg"
-      ? '<svg class="dot-icon" viewBox="0 0 12 12"><circle cx="6" cy="6" r="3.5" fill="none" stroke="#fff" stroke-width="1.3"/><line x1="6" y1="4" x2="6" y2="6" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/><line x1="6" y1="6" x2="7.8" y2="6" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/></svg>'
-      : '<svg class="dot-icon-sm" viewBox="0 0 12 12"><circle cx="6" cy="6" r="3.2" fill="none" stroke="#fff" stroke-width="1.8"/><line x1="6" y1="4.2" x2="6" y2="6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><line x1="6" y1="6" x2="7.6" y2="6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>';
-  // Offline / Inactive → diagonal slash (the dot itself is the circle)
-  if (l.indexOf("offline") > -1 || l.indexOf("inactive") > -1)
-    return sz === "lg"
-      ? '<svg class="dot-icon" viewBox="0 0 12 12"><line x1="3" y1="9" x2="9" y2="3" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>'
-      : '<svg class="dot-icon-sm" viewBox="0 0 12 12"><line x1="3" y1="9" x2="9" y2="3" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>';
-  // Busy / After Conversation Work → solid, no inner icon
-  return "";
+  switch (statusKind(name)) {
+    // DND / Do Not Disturb → white minus bar
+    case "dnd":
+      return sz === "lg" ? '<span class="dot-minus"></span>' : '<span class="dot-minus-sm"></span>';
+    // Available → white checkmark
+    case "available":
+      return sz === "lg"
+        ? '<svg class="dot-icon" viewBox="0 0 12 12"><polyline points="2.5,6.5 5,9 9.5,3.5" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        : '<svg class="dot-icon-sm" viewBox="0 0 12 12"><polyline points="3,6.5 5,8.5 9,3.5" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    // Away / Appear Away → white clock
+    case "away":
+      return sz === "lg"
+        ? '<svg class="dot-icon" viewBox="0 0 12 12"><circle cx="6" cy="6" r="3.5" fill="none" stroke="#fff" stroke-width="1.3"/><line x1="6" y1="4" x2="6" y2="6" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/><line x1="6" y1="6" x2="7.8" y2="6" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/></svg>'
+        : '<svg class="dot-icon-sm" viewBox="0 0 12 12"><circle cx="6" cy="6" r="3.2" fill="none" stroke="#fff" stroke-width="1.8"/><line x1="6" y1="4.2" x2="6" y2="6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><line x1="6" y1="6" x2="7.6" y2="6" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>';
+    // Offline / Inactive → diagonal slash (the dot itself is the circle)
+    case "offline":
+      return sz === "lg"
+        ? '<svg class="dot-icon" viewBox="0 0 12 12"><line x1="3" y1="9" x2="9" y2="3" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>'
+        : '<svg class="dot-icon-sm" viewBox="0 0 12 12"><line x1="3" y1="9" x2="9" y2="3" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>';
+    // Busy / After Conversation Work / unknown → solid, no inner icon
+    default:
+      return "";
+  }
 }
 
 function esc(s: string): string {
@@ -174,8 +219,11 @@ function esc(s: string): string {
 
 function fmtShort(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(s / 86400);
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
+  // Multi-day spans used to render as "138h 22m"; show days so it reads as a real duration.
+  if (d > 0) return `${d}d ${h - d * 24}h`;
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m ${s % 60}s`;
   return `${s % 60}s`;
@@ -217,13 +265,33 @@ function getClientUrl(): string {
 }
 
 async function loadPresenceMap(api: WebApiLike): Promise<Record<string, string>> {
-  const resp = await api.retrieveMultipleRecords(
-    "msdyn_presence",
-    "?$select=msdyn_presenceid,msdyn_presencestatustext"
-  );
+  let resp: ComponentFramework.WebApi.RetrieveMultipleResponse;
+  let hasBase = true;
+  try {
+    resp = await api.retrieveMultipleRecords(
+      "msdyn_presence",
+      "?$select=msdyn_presenceid,msdyn_name,msdyn_presencestatustext,msdyn_basepresencestatus"
+    );
+  } catch (e) {
+    // Older/locked-down orgs may reject msdyn_basepresencestatus — degrade to text matching.
+    console.warn("[PresenceHub] base presence status unavailable, falling back to text matching", e);
+    hasBase = false;
+    resp = await api.retrieveMultipleRecords(
+      "msdyn_presence",
+      "?$select=msdyn_presenceid,msdyn_presencestatustext"
+    );
+  }
   const pmap: Record<string, string> = {};
   for (const e of resp.entities) {
-    pmap[e.msdyn_presenceid as string] = e.msdyn_presencestatustext as string;
+    const text = (e.msdyn_presencestatustext as string) || (e.msdyn_name as string) || "";
+    pmap[e.msdyn_presenceid as string] = text;
+    if (!hasBase) continue;
+    const base = e.msdyn_basepresencestatus as number | null;
+    if (base === null || base === undefined) continue;
+    for (const label of [text, e.msdyn_name as string]) {
+      const k = (label || "").trim().toLowerCase();
+      if (k) BASE_BY_TEXT[k] = base;
+    }
   }
   return pmap;
 }
@@ -245,10 +313,24 @@ interface SharedServices {
 
 function fmtClock(ms: number): string {
   let s = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(s / 86400);
+  s -= d * 86400;
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   s = s % 60;
-  return `${h < 10 ? "0" : ""}${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
+  // Past 24h show days instead of an ever-growing hour count ("138:22:33" -> "5d 18:22:33").
+  const clock = `${h < 10 ? "0" : ""}${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
+  return d > 0 ? `${d}d ${clock}` : clock;
+}
+
+function fmtDateTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString(getLocale(), {
+      month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
 }
 
 function fmtTime(iso: string): string {
@@ -273,23 +355,21 @@ function isToday(d: Date): boolean {
    ═══════════════════════════════════════════════════════════════ */
 
 function getInitials(name: string): string {
-  const parts = (name || "?").trim().split(/\s+/);
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
   if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  return parts[0][0].toUpperCase();
+  return parts.length ? parts[0][0].toUpperCase() : "?";
 }
 
 interface QueueInfo { id: string; name: string; }
 interface AgentInfo { id: string; name: string; presenceId: string | null; presenceName: string; since: string | null; }
 interface AgentWithQueues extends AgentInfo { queues: QueueInfo[]; }
 
+const KIND_ORDER: Record<StatusKind, number> = {
+  available: 0, busy: 1, acw: 1, dnd: 2, away: 3, unknown: 4, offline: 5,
+};
+
 function statusOrder(a: AgentInfo): number {
-  const l = a.presenceName.toLowerCase();
-  if (l.indexOf("available") > -1) return 0;
-  if (l.indexOf("busy") > -1) return 1;
-  if (l.indexOf("do not disturb") > -1) return 2;
-  if (l.indexOf("away") > -1 || l.indexOf("appear away") > -1) return 3;
-  if (l.indexOf("offline") > -1 || l.indexOf("inactive") > -1) return 5;
-  return 4;
+  return KIND_ORDER[statusKind(a.presenceName)];
 }
 
 const LOADING_HTML = `<div class="qh-loading"><span class="qh-loading-dot"></span><span class="qh-loading-dot" style="animation-delay:.2s"></span><span class="qh-loading-dot" style="animation-delay:.4s"></span></div>`;
@@ -316,10 +396,14 @@ class PresenceTimerPanel {
   private _errStreak = 0;            // consecutive poll failures (for backoff)
   private _skipCount = 0;            // v2.8.3: monotonic tick counter for backoff gating
   private _bootstrapped = false;     // true once first successful presence read happened
+  private _ticks = 0;                // 1s ticks since init (drives rollover + auto-refresh)
+  private _trackingToday = true;     // false once the user pins a specific past day
+  private _onVisibility: (() => void) | null = null;
 
   private _elDot!: HTMLDivElement;
   private _elName!: HTMLSpanElement;
   private _elClock!: HTMLDivElement;
+  private _elSince!: HTMLDivElement;
   private _elErr!: HTMLDivElement;
   private _elTL!: HTMLDivElement;
   private _elSum!: HTMLDivElement;
@@ -346,6 +430,7 @@ class PresenceTimerPanel {
     if (this._tickTimer !== null) clearInterval(this._tickTimer);
     if (this._pollTimer !== null) clearInterval(this._pollTimer);
     if (this._onDocClick) document.removeEventListener("click", this._onDocClick);
+    if (this._onVisibility) document.removeEventListener("visibilitychange", this._onVisibility);
   }
 
   private _buildUI(): void {
@@ -357,6 +442,7 @@ class PresenceTimerPanel {
         </div>
         <div class="time" data-ref="clock">00:00:00</div>
         <div class="lbl">${loc("timeInStatus")}</div>
+        <div class="since" data-ref="since"></div>
         <div class="err" data-ref="err"></div>
       </div>
       <div class="dp-section">
@@ -375,11 +461,12 @@ class PresenceTimerPanel {
         <div class="hist-title-row"><span class="hist-title">${loc("timeline")}</span><button class="hist-refresh" data-ref="refreshBtn" title="${loc("refresh")}">↻</button></div>
         <div data-ref="timeline"></div>
       </div>
-      <div style="font-size:9px;color:#999;text-align:right;padding:2px 6px 0 0;opacity:.6">PresenceHub v2.8.3</div>`;
+      <div style="font-size:9px;color:#999;text-align:right;padding:2px 6px 0 0;opacity:.6">PresenceHub v${VERSION}</div>`;
 
     this._elDot = this._ref("dot") as HTMLDivElement;
     this._elName = this._ref("sName") as HTMLSpanElement;
     this._elClock = this._ref("clock") as HTMLDivElement;
+    this._elSince = this._ref("since") as HTMLDivElement;
     this._elErr = this._ref("err") as HTMLDivElement;
     this._elTL = this._ref("timeline") as HTMLDivElement;
     this._elSum = this._ref("summary") as HTMLDivElement;
@@ -395,7 +482,7 @@ class PresenceTimerPanel {
     this._elPrev.addEventListener("click", () => this._shiftDay(-1));
     this._elNext.addEventListener("click", () => this._shiftDay(1));
     this._elToday.addEventListener("click", () => {
-      this._selectedDate = new Date();
+      this._setSelectedDate(new Date());
       this._calOpen = false;
       this._elCalOverlay.style.display = "none";
       this._loadDay();
@@ -409,6 +496,21 @@ class PresenceTimerPanel {
       }
     };
     document.addEventListener("click", this._onDocClick);
+
+    // Polling is suspended while the tab is hidden, and browsers throttle background
+    // timers heavily. Refresh the moment the user comes back instead of showing stale
+    // data until the next interval fires.
+    this._onVisibility = () => {
+      if (isTabHidden()) return;
+      this._errStreak = 0;
+      this._skipCount = 0;
+      void this._poll();
+      if (this._trackingToday) {
+        this._selectedDate = new Date();
+        void this._loadDay();
+      }
+    };
+    document.addEventListener("visibilitychange", this._onVisibility);
   }
 
   private _ref(name: string): HTMLElement {
@@ -426,6 +528,7 @@ class PresenceTimerPanel {
       this._start = p.since ? new Date(p.since).getTime() : Date.now();
       this._bootstrapped = true;
       this._render(p);
+      this._renderSince(p.since);
       this._tick();
       this._loadDay();
     } catch (e: unknown) {
@@ -438,7 +541,8 @@ class PresenceTimerPanel {
   private async _getPresence(): Promise<{ id: string; name: string; since: string | null }> {
     const resp = await this._s.api.retrieveMultipleRecords(
       "msdyn_agentstatus",
-      `?$filter=_msdyn_agentid_value eq ${this._s.userId}&$select=_msdyn_currentpresenceid_value&$top=1`
+      `?$filter=_msdyn_agentid_value eq ${this._s.userId}` +
+      `&$select=_msdyn_currentpresenceid_value,msdyn_presencemodifiedon&$top=1`
     );
     // v2.8.3: never throw on missing record / null presence. Render "Offline" instead so
     // the pill always escapes the "Loading\u2026" state on first paint even when the
@@ -454,18 +558,23 @@ class PresenceTimerPanel {
       return { id: "", name: "Offline", since: null };
     }
 
-    // Get the real start time from the latest history record (immune to page-refresh resets)
+    // The authoritative start of the CURRENT status is the still-open history segment
+    // (msdyn_endtime is null). v2.8.3 took the newest segment for this presence regardless
+    // of whether it was already closed, so a stale closed segment could inflate the timer
+    // by days. Fall back to msdyn_presencemodifiedon when no open segment exists yet.
     let since: string | null = null;
     try {
       const hResp = await this._s.api.retrieveMultipleRecords(
         "msdyn_agentstatushistory",
         `?$filter=_msdyn_agentid_value eq ${this._s.userId} and _msdyn_presenceid_value eq ${pid}` +
-        `&$select=msdyn_starttime,msdyn_endtime&$orderby=msdyn_starttime desc&$top=1`
+        ` and msdyn_endtime eq null` +
+        `&$select=msdyn_starttime&$orderby=msdyn_starttime desc&$top=1`
       );
       if (hResp.entities && hResp.entities.length) {
         since = (hResp.entities[0]["msdyn_starttime"] as string) || null;
       }
-    } catch { /* fall through */ }
+    } catch { /* fall through to msdyn_presencemodifiedon */ }
+    if (!since) since = (rec["msdyn_presencemodifiedon"] as string) || null;
 
     return { id: pid, name: pName(pid, this._s.pmap), since };
   }
@@ -495,10 +604,13 @@ class PresenceTimerPanel {
     const dayEnd = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1, 0, 0, 0, 0);
     const dayStartStr = PresenceTimerPanel._toUtcLiteral(dayStart);
     const dayEndStr = PresenceTimerPanel._toUtcLiteral(dayEnd);
+    // Match every segment that OVERLAPS the day, not only those that START in it. A status
+    // held across midnight (e.g. Offline since last week) otherwise vanished and the day
+    // rendered as "No activity on this day" while the pill showed hours in that status.
     const filter =
       `_msdyn_agentid_value eq ${this._s.userId}` +
-      ` and msdyn_starttime ge ${dayStartStr}` +
-      ` and msdyn_starttime lt ${dayEndStr}`;
+      ` and msdyn_starttime lt ${dayEndStr}` +
+      ` and (msdyn_endtime eq null or msdyn_endtime gt ${dayStartStr})`;
     const q =
       `?$filter=${filter}` +
       `&$select=msdyn_starttime,msdyn_endtime,_msdyn_presenceid_value` +
@@ -507,8 +619,29 @@ class PresenceTimerPanel {
     return resp.entities || [];
   }
 
+  /** Clamp a history segment to the visible day so cross-midnight spans report day-local time. */
+  private _span(r: ComponentFramework.WebApi.Entity): { st: number; en: number } {
+    const d = this._selectedDate;
+    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+    const dayEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0, 0, 0).getTime();
+    const rawSt = new Date(r["msdyn_starttime"] as string).getTime();
+    const rawEn = r["msdyn_endtime"] ? new Date(r["msdyn_endtime"] as string).getTime() : Date.now();
+    const st = Math.max(rawSt, dayStart);
+    const en = Math.min(rawEn, dayEnd, Date.now());
+    return { st, en: Math.max(st, en) };
+  }
+
   private _tick(): void {
     if (this._start) this._elClock.textContent = fmtClock(Date.now() - this._start);
+    // The panel can stay mounted for days. Roll the "Today" view over at midnight and
+    // refresh the day periodically so the still-open segment keeps growing.
+    this._ticks++;
+    if (this._ticks % 30 === 0 && this._trackingToday && !isToday(this._selectedDate)) {
+      this._selectedDate = new Date();
+      void this._loadDay();
+    } else if (this._ticks % DAY_REFRESH_TICKS === 0 && isToday(this._selectedDate) && !isTabHidden()) {
+      void this._loadDay();
+    }
   }
 
   private _render(p: { id: string; name: string }): void {
@@ -531,6 +664,17 @@ class PresenceTimerPanel {
     this._elErr.style.display = "block";
   }
 
+  /** Show when the current status started, so a large "time in status" is self-explanatory. */
+  private _renderSince(iso: string | null): void {
+    if (!this._elSince) return;
+    this._elSince.textContent = iso ? fmtDateTime(iso) : "";
+  }
+
+  private _setSelectedDate(d: Date): void {
+    this._selectedDate = d;
+    this._trackingToday = isToday(d);
+  }
+
   private async _poll(): Promise<void> {
     // Skip while a previous poll is still in flight (slow WebAPI → no thundering herd).
     if (this._polling) return;
@@ -550,14 +694,17 @@ class PresenceTimerPanel {
     try {
       const p = await this._getPresence();
       const wasBootstrapping = !this._bootstrapped;
-      if (p.id !== this._curId) {
+      const since = p.since ? new Date(p.since).getTime() : null;
+      // Resync on presence change AND on a new segment start for the same presence
+      // (A -> B -> A between two polls looks unchanged by id alone, which froze the timer).
+      if (p.id !== this._curId || (since !== null && since !== this._start) || wasBootstrapping) {
         this._curId = p.id;
-        this._start = p.since ? new Date(p.since).getTime() : Date.now();
-        if (isToday(this._selectedDate)) this._loadDay();
-      } else if (wasBootstrapping) {
-        // First successful read after initialization failed — sync start + load day.
-        this._start = p.since ? new Date(p.since).getTime() : Date.now();
-        this._loadDay();
+        this._start = since ?? Date.now();
+        this._renderSince(p.since);
+        if (this._trackingToday) {
+          this._selectedDate = new Date();
+          void this._loadDay();
+        }
       }
       this._bootstrapped = true;
       this._errStreak = 0;
@@ -585,8 +732,7 @@ class PresenceTimerPanel {
     let maxDur = 0;
     for (const r of records) {
       const name = pName(r["_msdyn_presenceid_value"] as string, this._s.pmap);
-      const st = new Date(r["msdyn_starttime"] as string).getTime();
-      const en = r["msdyn_endtime"] ? new Date(r["msdyn_endtime"] as string).getTime() : Date.now();
+      const { st, en } = this._span(r);
       const dur = en - st;
       totals[name] = (totals[name] || 0) + dur;
       if (dur > maxDur) maxDur = dur;
@@ -605,11 +751,9 @@ class PresenceTimerPanel {
     const chrono = [...records].sort(
       (a, b) => new Date(a["msdyn_starttime"] as string).getTime() - new Date(b["msdyn_starttime"] as string).getTime()
     );
-    const dayStart = new Date(chrono[0]["msdyn_starttime"] as string).getTime();
+    const dayStart = this._span(chrono[0]).st;
     const lastRec = chrono[chrono.length - 1];
-    const dayEnd = lastRec["msdyn_endtime"]
-      ? new Date(lastRec["msdyn_endtime"] as string).getTime()
-      : Date.now();
+    const dayEnd = this._span(lastRec).en;
     const totalSpan = dayEnd - dayStart;
     if (totalSpan > 0) {
       let barHtml = '<div class="sbar">';
@@ -617,8 +761,7 @@ class PresenceTimerPanel {
       for (let i = 0; i < segCount; i++) {
         const r = chrono[i];
         const name = pName(r["_msdyn_presenceid_value"] as string, this._s.pmap);
-        const st = new Date(r["msdyn_starttime"] as string).getTime();
-        const en = r["msdyn_endtime"] ? new Date(r["msdyn_endtime"] as string).getTime() : Date.now();
+        const { st, en } = this._span(r);
         const pct = Math.max(0.3, ((en - st) / totalSpan) * 100);
         const dimmed = this._filterStatus && this._filterStatus !== name ? " sbar-seg--dim" : "";
         const radius = segCount === 1
@@ -632,8 +775,8 @@ class PresenceTimerPanel {
       }
       barHtml += '</div>';
       // Time labels
-      const startLbl = fmtTime(chrono[0]["msdyn_starttime"] as string);
-      const endLbl = lastRec["msdyn_endtime"] ? fmtTime(lastRec["msdyn_endtime"] as string) : fmtTime(new Date().toISOString());
+      const startLbl = fmtTime(new Date(dayStart).toISOString());
+      const endLbl = fmtTime(new Date(dayEnd).toISOString());
       barHtml += `<div class="sbar-labels"><span>${startLbl}</span><span>${endLbl}</span></div>`;
       this._elBar.innerHTML = barHtml;
     } else {
@@ -666,8 +809,7 @@ class PresenceTimerPanel {
     // Recalculate maxDur for filtered set
     let filteredMaxDur = 0;
     for (const r of filtered) {
-      const st = new Date(r["msdyn_starttime"] as string).getTime();
-      const en = r["msdyn_endtime"] ? new Date(r["msdyn_endtime"] as string).getTime() : Date.now();
+      const { st, en } = this._span(r);
       const dur = en - st;
       if (dur > filteredMaxDur) filteredMaxDur = dur;
     }
@@ -676,11 +818,11 @@ class PresenceTimerPanel {
     for (const r of filtered) {
       const name = pName(r["_msdyn_presenceid_value"] as string, this._s.pmap);
       const c = color(name);
-      const st = new Date(r["msdyn_starttime"] as string).getTime();
-      const en = r["msdyn_endtime"] ? new Date(r["msdyn_endtime"] as string).getTime() : Date.now();
+      const { st, en } = this._span(r);
       const dur = en - st;
       const barPct = filteredMaxDur > 0 ? Math.max(4, Math.round((dur / filteredMaxDur) * 100)) : 100;
-      html += `<div class="tl-item"><div class="tl-dot" style="background:${c}">${statusIcon(name, "lg")}</div><div class="tl-body"><div class="tl-row"><span class="tl-name">${esc(name)}</span><span class="tl-dur">${fmtShort(dur)}</span></div><div class="tl-time">${fmtTimeRange(r["msdyn_starttime"] as string, (r["msdyn_endtime"] as string) || null)}</div><div class="tl-bar" style="width:${barPct}%;background:${c}"></div></div></div>`;
+      const openEnded = !r["msdyn_endtime"] && isToday(this._selectedDate);
+      html += `<div class="tl-item"><div class="tl-dot" style="background:${c}">${statusIcon(name, "lg")}</div><div class="tl-body"><div class="tl-row"><span class="tl-name">${esc(name)}</span><span class="tl-dur">${fmtShort(dur)}</span></div><div class="tl-time">${fmtTimeRange(new Date(st).toISOString(), openEnded ? null : new Date(en).toISOString())}</div><div class="tl-bar" style="width:${barPct}%;background:${c}"></div></div></div>`;
     }
     html += "</div>";
     this._elTL.innerHTML = html;
@@ -715,7 +857,7 @@ class PresenceTimerPanel {
     const d = new Date(this._selectedDate);
     d.setDate(d.getDate() + offset);
     if (d > new Date()) return;
-    this._selectedDate = d;
+    this._setSelectedDate(d);
     this._loadDay();
   }
 
@@ -774,7 +916,7 @@ class PresenceTimerPanel {
     this._elCalOverlay.querySelectorAll(".cal-day:not(.cal-dis)").forEach((btn) => {
       btn.addEventListener("click", () => {
         const day = parseInt((btn as HTMLElement).dataset.day || "1", 10);
-        this._selectedDate = new Date(year, month, day);
+        this._setSelectedDate(new Date(year, month, day));
         this._calOpen = false;
         this._elCalOverlay.style.display = "none";
         this._loadDay();
@@ -1382,10 +1524,11 @@ class QueueHubPanel {
     };
     const dayStart = toUtc(dayStartDt);
     const dayEnd = toUtc(dayEndDt);
+    // Overlap match (not "starts today") so a status held across midnight still shows up.
     const filter =
       `_msdyn_agentid_value eq ${agentId}` +
-      ` and msdyn_starttime ge ${dayStart}` +
-      ` and msdyn_starttime lt ${dayEnd}`;
+      ` and msdyn_starttime lt ${dayEnd}` +
+      ` and (msdyn_endtime eq null or msdyn_endtime gt ${dayStart})`;
     const q =
       `?$filter=${filter}` +
       `&$select=msdyn_starttime,msdyn_endtime,_msdyn_presenceid_value` +
@@ -1394,6 +1537,17 @@ class QueueHubPanel {
     const records = resp.entities || [];
     this._agentHistoryCache[agentId] = records;
     return records;
+  }
+
+  /** Clamp a history segment to today so cross-midnight spans don't dominate the bar. */
+  private static _spanToday(r: ComponentFramework.WebApi.Entity): { st: number; en: number } {
+    const now = new Date();
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
+    const rawSt = new Date(r["msdyn_starttime"] as string).getTime();
+    const rawEn = r["msdyn_endtime"] ? new Date(r["msdyn_endtime"] as string).getTime() : Date.now();
+    const st = Math.max(rawSt, dayStart);
+    const en = Math.min(rawEn, Date.now());
+    return { st, en: Math.max(st, en) };
   }
 
   private _renderAgentBar(records: ComponentFramework.WebApi.Entity[], container: HTMLElement): void {
@@ -1406,11 +1560,9 @@ class QueueHubPanel {
     const chrono = [...records].sort(
       (a, b) => new Date(a["msdyn_starttime"] as string).getTime() - new Date(b["msdyn_starttime"] as string).getTime()
     );
-    const barStart = new Date(chrono[0]["msdyn_starttime"] as string).getTime();
+    const barStart = QueueHubPanel._spanToday(chrono[0]).st;
     const lastRec = chrono[chrono.length - 1];
-    const barEnd = lastRec["msdyn_endtime"]
-      ? new Date(lastRec["msdyn_endtime"] as string).getTime()
-      : Date.now();
+    const barEnd = QueueHubPanel._spanToday(lastRec).en;
     const totalSpan = barEnd - barStart;
     if (totalSpan <= 0) return;
 
@@ -1419,8 +1571,7 @@ class QueueHubPanel {
     for (let i = 0; i < segCount; i++) {
       const r = chrono[i];
       const name = pName(r["_msdyn_presenceid_value"] as string, this._s.pmap);
-      const st = new Date(r["msdyn_starttime"] as string).getTime();
-      const en = r["msdyn_endtime"] ? new Date(r["msdyn_endtime"] as string).getTime() : Date.now();
+      const { st, en } = QueueHubPanel._spanToday(r);
       const pct = Math.max(0.3, ((en - st) / totalSpan) * 100);
       const radius = segCount === 1
         ? "border-radius:8px;"
@@ -1432,8 +1583,8 @@ class QueueHubPanel {
       barHtml += `<div class="sbar-seg" style="width:${pct}%;background:${color(name)};${radius}" title="${esc(name)} \u2014 ${fmtShort(en - st)}"></div>`;
     }
     barHtml += '</div>';
-    const startLbl = fmtTime(chrono[0]["msdyn_starttime"] as string);
-    const endLbl = lastRec["msdyn_endtime"] ? fmtTime(lastRec["msdyn_endtime"] as string) : fmtTime(new Date().toISOString());
+    const startLbl = fmtTime(new Date(barStart).toISOString());
+    const endLbl = fmtTime(new Date(barEnd).toISOString());
     barHtml += `<div class="sbar-labels"><span>${startLbl}</span><span>${endLbl}</span></div></div>`;
 
     container.insertAdjacentHTML("afterbegin", barHtml);
