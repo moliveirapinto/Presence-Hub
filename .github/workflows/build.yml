@@ -1,0 +1,39 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check version consistency
+        run: npm run version:check
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build control
+        run: npm run build
+
+      - name: Build solution packages
+        run: dotnet build Solution/Solution.cdsproj --configuration Release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solution-packages
+          path: Solution/bin/Release/*.zip
+          if-no-files-found: error

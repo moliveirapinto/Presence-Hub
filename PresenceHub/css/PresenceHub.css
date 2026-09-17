@@ -166,6 +166,17 @@
   font-variant-numeric: tabular-nums;
 }
 
+.queue-hub .qh-err {
+  margin: 0 8px 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: #fdf3f4;
+  border: 1px solid #f3d6da;
+  color: #a4262c;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .presence-timer .err {
   color: #c4314b;
   font-size: 12px;

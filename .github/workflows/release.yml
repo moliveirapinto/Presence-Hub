@@ -1,0 +1,49 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check version consistency
+        run: npm run version:check
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build control
+        run: npm run build
+
+      - name: Build solution packages
+        run: dotnet build Solution/Solution.cdsproj --configuration Release
+
+      - name: Stage release assets
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v").Replace(".", "_")
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Copy-Item Solution/bin/Release/Solution.zip "dist/PresenceHub_$version.zip"
+          Copy-Item Solution/bin/Release/Solution_managed.zip "dist/PresenceHub_${version}_managed.zip"
+          Get-ChildItem dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          body_path: release/NOTES.md
+          name: Presence Hub ${{ github.ref_name }}

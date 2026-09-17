@@ -20,8 +20,9 @@
 # macos
 .DS_Store
 
-# solution packaging (not used)
-/Solution/
+# solution packaging: the project is tracked, its build output is not
+/Solution/bin/
+/Solution/obj/
 /Solution_old/
 
 # exported zips
@@ -29,3 +30,6 @@
 
 # eslint backups
 *.bak
+
+# jest
+/coverage
